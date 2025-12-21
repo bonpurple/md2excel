@@ -56,13 +56,13 @@ public final class MarkdownTable {
                 Cell cell = row.createCell(colIndex++);
 
                 if (isHeaderRow) {
-                    String joined = MarkdownInline.brToSingleSpace(colText); // ★必ず split を通る
+                    String joined = MarkdownInline.brToSingleSpace(colText); // 必ず split を通る
                     if (!joined.isEmpty()) {
                         cell.setCellValue(stripInlineMarkdown(joined));
                     }
                     cell.setCellStyle(styles.tableHeaderStyle);
                 } else {
-                    String joined = MarkdownInline.brToSingleSpace(colText); // ★必ず split を通る
+                    String joined = MarkdownInline.brToSingleSpace(colText); // 必ず split を通る
                     if (!joined.isEmpty()) {
                         MarkdownInline.setMarkdownRichTextCell(wb, cell, joined, styles.tableBodyStyle);
                     } else {

@@ -117,7 +117,7 @@ public final class MdStyle {
         // ---------------- 水平線 ----------------
         horizontalRuleStyle = wb.createCellStyle();
         horizontalRuleStyle.cloneStyleFrom(base);
-        horizontalRuleStyle.setBorderBottom(BorderStyle.THIN);
+        horizontalRuleStyle.setBorderBottom(BorderStyle.HAIR);
         Font hrFont = wb.createFont();
         hrFont.setFontName(fontName);
         hrFont.setFontHeightInPoints((short) normalSize);
