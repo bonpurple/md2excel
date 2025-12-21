@@ -785,6 +785,9 @@ final class MarkdownRenderer {
     }
 
     private static boolean shouldReuseBlankForNormalText(int indent, RenderState st, NormalTextFlags f) {
+        if (st.lastBlankAfterTable) {
+            return false;
+        }
         boolean collapseEmptyLineBetweenPlainParagraphs = indent == 0 && st.lastRowType == RenderState.RowType.BLANK
                 && st.lastBlankFromMarkdown && st.lastBlankRowIndex >= 0
                 && st.lastContentType == RenderState.ContentType.NORMAL && !st.inListBlock && !st.lastWasBlockQuote;
