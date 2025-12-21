@@ -48,6 +48,8 @@ public final class RowUtil {
 
     // 判定ルールをここに集約（仕様維持）
     private static boolean canReuseMarkdownBlank(RenderState st, ReuseKind kind) {
+        if (st.lastBlankAfterTable)
+            return false;
         switch (kind) {
         case HORIZONTAL_RULE:
             return true;

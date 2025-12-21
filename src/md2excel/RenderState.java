@@ -43,6 +43,7 @@ final class RenderState {
 
     boolean lastBlankFromMarkdown = false;
     int lastBlankRowIndex = -1;
+    boolean lastBlankAfterTable = false;
 
     // 番号付き説明行
     boolean inNestedNumberBlock = false;
@@ -52,6 +53,7 @@ final class RenderState {
     // 直前コンテンツ
     ContentType lastContentType = ContentType.NONE;
     int lastContentCol = 0;
+    boolean lastContentWasTable = false;
 
     // コードブロック
     int codeBlockBaseIndent = -1;
@@ -148,6 +150,7 @@ final class RenderState {
         lastLineWasTable = table;
         lastBlankFromMarkdown = false;
         lastBlankRowIndex = -1;
+        lastBlankAfterTable = false;
     }
 
     // 「段落連結/箇条書き説明連結」を切る（安全側）
@@ -165,6 +168,7 @@ final class RenderState {
             lastLineWasTable = false;
             lastBlankFromMarkdown = true;
             lastBlankRowIndex = rowNum; // reuse 対象
+            lastBlankAfterTable = lastContentWasTable;
             // blank は直近コンテンツを更新しない
             return;
 
@@ -173,6 +177,7 @@ final class RenderState {
             if (lastRowType == RowType.BLANK && rowIndex > 0) {
                 lastBlankRowIndex = rowIndex - 1; // 従来仕様：直前BLANKだけ reuse 合わせ
             }
+            lastBlankAfterTable = lastContentWasTable;
             return;
 
         case WRITE_AUTO_BLANK:
@@ -180,6 +185,7 @@ final class RenderState {
             lastLineWasTable = false;
             lastBlankFromMarkdown = false; // 重要：reuse 対象にしない
             lastBlankRowIndex = -1;
+            lastBlankAfterTable = false;
             lastWasBlockQuote = false;
             return;
 
@@ -188,7 +194,9 @@ final class RenderState {
             lastLineWasTable = false;
             lastBlankFromMarkdown = false;
             lastBlankRowIndex = -1;
+            lastBlankAfterTable = false;
             lastWasBlockQuote = false;
+            lastContentWasTable = false;
             return;
 
         case WRITE_HEADING:
@@ -196,9 +204,11 @@ final class RenderState {
             lastLineWasTable = false;
             lastBlankFromMarkdown = false;
             lastBlankRowIndex = -1;
+            lastBlankAfterTable = false;
 
             lastContentType = ContentType.HEADING;
             lastContentCol = 0;
+            lastContentWasTable = false;
 
             inHeadingParagraphBlock = true;
 
@@ -214,13 +224,16 @@ final class RenderState {
             lastLineWasTable = true;
             lastBlankFromMarkdown = false;
             lastBlankRowIndex = -1;
+            lastBlankAfterTable = false;
             lastWasBlockQuote = false;
+            lastContentWasTable = true;
             return;
 
         case WRITE_TABLE_ROW:
             wroteOtherRow(true);
             lastContentType = ContentType.OTHER;
             lastContentCol = col;
+            lastContentWasTable = true;
             lastWasBlockQuote = false;
             return;
 
@@ -228,6 +241,7 @@ final class RenderState {
             wroteOtherRow(false);
             lastContentType = ContentType.CODE;
             lastContentCol = col;
+            lastContentWasTable = false;
             lastWasBlockQuote = false;
             // コード行は連結を切る
             cutParagraphLinking();
@@ -239,6 +253,7 @@ final class RenderState {
 
             lastContentType = ContentType.BULLET;
             lastContentCol = col;
+            lastContentWasTable = false;
 
             bulletDetailActive = true;
             bulletDetailRow = rowNum;
@@ -263,6 +278,7 @@ final class RenderState {
 
             lastContentType = ContentType.NUMBER;
             lastContentCol = col;
+            lastContentWasTable = false;
 
             inListBlock = true;
 
@@ -287,6 +303,7 @@ final class RenderState {
 
             lastContentType = ContentType.NORMAL; // quote は NORMAL 扱い
             lastContentCol = col;
+            lastContentWasTable = false;
 
             lastWasBlockQuote = true;
 
@@ -299,6 +316,7 @@ final class RenderState {
 
             lastContentType = ContentType.NORMAL;
             lastContentCol = blockQuoteCellCol;
+            lastContentWasTable = false;
 
             lastWasBlockQuote = true;
 
@@ -311,6 +329,7 @@ final class RenderState {
 
             lastContentType = ContentType.NORMAL;
             lastContentCol = col;
+            lastContentWasTable = false;
 
             // “通常行→引用セル追記” は通常段落連結の起点（既存仕様維持）
             lastNormalRowIndex = rowNum;
@@ -326,6 +345,7 @@ final class RenderState {
 
             lastContentType = ContentType.NORMAL;
             lastContentCol = col;
+            lastContentWasTable = false;
 
             // indent==0 のときだけ「通常連結の起点」＋ bulletDetail 終了（既存仕様）
             if (indent == 0) {
@@ -341,6 +361,7 @@ final class RenderState {
 
             lastContentType = ContentType.NORMAL;
             lastContentCol = col;
+            lastContentWasTable = false;
 
             lastNormalRowIndex = rowNum;
             lastNormalIndent = indent;
