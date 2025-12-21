@@ -5,6 +5,10 @@
 
 ## 運用
 - コマンド実行は必ず事前に提案し、承認を得てから実行すること。
-  - 例外: dir / type / findstr / (PowerShell) Get-Content -Encoding utf8 は読み取り専用なので実行してよい。
+  - 例外: 次の「読み取り専用」は承認なしで実行してよい。
+  - dir / ls / Get-ChildItem
+  - type / cat / (PowerShell) Get-Content -Encoding utf8
+  - findstr / rg (ripgrep)
+  - git status / git diff
 - 変更を行った場合、最後にコミットメッセージ案を1〜3個提案する（形式: type: 要約）。
 - 変更は最小差分にする（無関係な整形・リネーム・リファクタはしない）。
