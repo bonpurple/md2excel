@@ -64,11 +64,13 @@ public final class RowUtil {
             return st.lastContentType != RenderState.ContentType.HEADING;
 
         case CODE_LINE:
-        case TABLE_ROW:
             // 既存：直前コンテンツが (BULLET/NUMBER/NORMAL) のときだけ詰める
             return st.lastContentType == RenderState.ContentType.BULLET
                     || st.lastContentType == RenderState.ContentType.NUMBER
                     || st.lastContentType == RenderState.ContentType.NORMAL;
+        case TABLE_ROW:
+            // テーブル開始前の Markdown 空行は詰めない（空行を保持）
+            return false;
 
         default:
             return false;
