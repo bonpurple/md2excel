@@ -518,6 +518,20 @@ final class RenderState {
         }
     }
 
+    /** 「直前が引用なら空行を1つ入れる」仕様 */
+    void ensureAutoBlankIfPrevBlockQuote(Sheet sheet, CellStyle normalRowStyle) {
+        if (lastWasBlockQuote && lastRowType != RowType.BLANK) {
+            writeAutoBlank(sheet, normalRowStyle);
+        }
+    }
+
+    /** 「直前がコード行なら空行を1つ入れる」仕様 */
+    void ensureAutoBlankIfPrevCodeBlock(Sheet sheet, CellStyle normalRowStyle) {
+        if (lastContentType == ContentType.CODE && lastRowType != RowType.BLANK) {
+            writeAutoBlank(sheet, normalRowStyle);
+        }
+    }
+
     /** 自動空行を必ず1行書く（Markdown由来ではない、reuse対象にしない） */
     private void writeAutoBlank(Sheet sheet, CellStyle normalRowStyle) {
         Row row = RowUtil.createRow(sheet, this, normalRowStyle);

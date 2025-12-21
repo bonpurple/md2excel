@@ -187,6 +187,7 @@ final class MarkdownRenderer {
     private static void handleCodeFence(LineInfo li, RenderContext ctx) {
 
         if (!ctx.st.inCodeBlock) {
+            ctx.st.ensureAutoBlankIfPrevBlockQuote(ctx.sheet, ctx.styles.normalStyle);
             ctx.st.currentCodeBlockIndent = li.indent;
         }
 
@@ -267,6 +268,8 @@ final class MarkdownRenderer {
 
     // -------------------- handler: 引用（>） --------------------
     private static void handleBlockQuote(LineInfo li, RenderContext ctx) {
+        ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.normalStyle);
+
         // 必ず split API を通す（ここが差分ポイント）
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(li.quoteText);
         boolean hasBr = sp.endsWithBr || sp.lines.size() >= 2;
