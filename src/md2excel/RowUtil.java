@@ -56,7 +56,8 @@ public final class RowUtil {
 
         case BLOCK_QUOTE:
             // 既存：見出し直後は詰めない＋引用の連続扱いも詰めない
-            return st.lastContentType != RenderState.ContentType.HEADING && !st.lastWasBlockQuote;
+            return st.lastContentType != RenderState.ContentType.HEADING
+                    && st.lastContentType != RenderState.ContentType.CODE && !st.lastWasBlockQuote;
 
         case BULLET_ITEM:
         case NUMBER_ITEM:
@@ -67,7 +68,7 @@ public final class RowUtil {
             // 既存：直前コンテンツが (BULLET/NUMBER/NORMAL) のときだけ詰める
             return st.lastContentType == RenderState.ContentType.BULLET
                     || st.lastContentType == RenderState.ContentType.NUMBER
-                    || st.lastContentType == RenderState.ContentType.NORMAL;
+                    || (st.lastContentType == RenderState.ContentType.NORMAL && !st.lastWasBlockQuote);
         case TABLE_ROW:
             // テーブル開始前の Markdown 空行は詰めない（空行を保持）
             return false;
