@@ -792,8 +792,9 @@ final class MarkdownRenderer {
             return false;
         }
         boolean collapseEmptyLineBetweenPlainParagraphs = indent == 0 && st.lastRowType == RenderState.RowType.BLANK
-                && st.lastBlankFromMarkdown && st.lastBlankRowIndex >= 0
-                && st.lastContentType == RenderState.ContentType.NORMAL && !st.inListBlock && !st.lastWasBlockQuote;
+                && st.lastBlankFromMarkdown && st.lastBlankRowIndex >= 0 && !st.inListBlock
+                && (st.lastContentType == RenderState.ContentType.NORMAL
+                        || st.lastContentType == RenderState.ContentType.CODE);
 
         return f.isListNote || f.isListChildParagraph || collapseEmptyLineBetweenPlainParagraphs;
     }
