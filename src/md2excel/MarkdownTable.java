@@ -66,9 +66,10 @@ public final class MarkdownTable {
                 if (isHeaderRow) {
                     String joined = MarkdownInline.brToSingleSpace(colText); // ★必ず split を通る
                     if (!joined.isEmpty()) {
-                        cell.setCellValue(stripInlineMarkdown(joined));
+                        MarkdownInline.setMarkdownRichTextCell(wb, cell, joined, styles.tableHeaderStyle);
+                    } else {
+                        cell.setCellStyle(styles.tableHeaderStyle);
                     }
-                    cell.setCellStyle(styles.tableHeaderStyle);
                 } else {
                     String joined = MarkdownInline.brToSingleSpace(colText); // ★必ず split を通る
                     if (!joined.isEmpty()) {
