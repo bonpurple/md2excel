@@ -54,7 +54,7 @@ public final class MarkdownTable {
             if (i == n || (inner.charAt(i) == '|' && !inCode && !isEscapedPipe(inner, i))) {
                 String colText = inner.substring(segStart, i).trim();
 
-                // \| を | として扱う（インラインコード外のみ）
+                // \| を | として扱う（インラインコード内も）
                 colText = unescapePipeOutsideInlineCode(colText);
 
                 // <br> を空白へ（インラインコード内は触らない）
@@ -99,20 +99,14 @@ public final class MarkdownTable {
     }
 
     /**
-     * テーブルセル内の "\|" を "|" に戻す（インラインコード `...` の中は変更しない）。
+     * テーブルセル内の "\|" を "|" に戻す。
      */
     private static String unescapePipeOutsideInlineCode(String s) {
         if (s == null || s.isEmpty()) return s;
         StringBuilder out = new StringBuilder(s.length());
-        boolean inCode = false;
         for (int i = 0; i < s.length(); i++) {
             char ch = s.charAt(i);
-            if (ch == '`') {
-                inCode = !inCode;
-                out.append(ch);
-                continue;
-            }
-            if (!inCode && ch == '\\' && i + 1 < s.length() && s.charAt(i + 1) == '|') {
+            if (ch == '\\' && i + 1 < s.length() && s.charAt(i + 1) == '|') {
                 out.append('|');
                 i++; // '|' を消費
                 continue;
