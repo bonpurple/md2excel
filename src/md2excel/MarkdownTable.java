@@ -152,11 +152,4 @@ public final class MarkdownTable {
         }
     }
 
-    private static String stripInlineMarkdown(String text) {
-        if (text == null || text.isEmpty())
-            return text;
-        String result = text.replace("**", "");
-        result = result.replace("`", "");
-        return result;
-    }
 }
