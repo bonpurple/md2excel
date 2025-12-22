@@ -239,8 +239,7 @@ final class MarkdownRenderer {
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.CODE_LINE,
                 ctx.styles.normalStyle);
 
-        int depth = ListStackUtil.getDepthForIndent(ctx.st.listStack, ctx.st.currentCodeBlockIndent);
-        int codeCol = clampCol(1 + depth, ctx.st);
+        int codeCol = calcBlockStartCol(ctx.st.currentCodeBlockIndent, ctx.st);
 
         int leadingSpaces = li.indent;
         int trimSpaces = ctx.st.computeCodeTrimSpaces(leadingSpaces);
@@ -286,8 +285,7 @@ final class MarkdownRenderer {
             return;
         }
 
-        int depth = ListStackUtil.getDepthForIndent(ctx.st.listStack, li.indent);
-        int col = clampCol(1 + depth, ctx.st);
+        int col = calcBlockStartCol(li.indent, ctx.st);
 
         // <br> 分割して同じ列に縦展開（sp をそのまま使う）
         // 1行目
@@ -351,8 +349,7 @@ final class MarkdownRenderer {
 
         int tableStartCol;
         if (ctx.st.currentTableHeaderRow < 0) {
-            int depth = ListStackUtil.getDepthForIndent(ctx.st.listStack, li.indent);
-            tableStartCol = clampCol(1 + depth, ctx.st);
+            tableStartCol = calcBlockStartCol(li.indent, ctx.st);
             ctx.st.currentTableStartCol = tableStartCol;
         } else {
             tableStartCol = ctx.st.currentTableStartCol;
@@ -830,6 +827,28 @@ final class MarkdownRenderer {
         if (col >= st.mergeLastCol)
             return st.mergeLastCol - 1;
         return col;
+    }
+    
+    /**
+     * コードブロック/引用/テーブル等の「ブロック開始列」を決める。
+     * - インデント0は A列(0) 起点
+     * - インデントありは従来どおり B列(1) 起点で深さに応じて右へ
+     */
+    private static int calcBlockStartCol(int indent, RenderState st) {
+        if (indent <= 0) {
+            return 0; // トップレベルは A列
+        }
+
+        int col;
+        if (!st.listStack.isEmpty()) {
+            int depth = ListStackUtil.getDepthForIndent(st.listStack, indent);
+            col = 1 + depth;
+        } else {
+            int level = indent / 2;
+            if (level < 0) level = 0;
+            col = 1 + level;
+        }
+        return clampCol(col, st);
     }
 
     private static final class NormalTextFlags {

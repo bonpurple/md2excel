@@ -45,9 +45,17 @@ public final class MarkdownTable {
 
         int segStart = 0;
         int n = inner.length();
+        boolean inCode = false; // `...` 内は | を区切りにしない（安全側）
         for (int i = 0; i <= n; i++) {
-            if (i == n || inner.charAt(i) == '|') {
+            if (i < n && inner.charAt(i) == '`') {
+                inCode = !inCode;
+                continue;
+            }
+            if (i == n || (inner.charAt(i) == '|' && !inCode && !isEscapedPipe(inner, i))) {
                 String colText = inner.substring(segStart, i).trim();
+
+                // \| を | として扱う（インラインコード外のみ）
+                colText = unescapePipeOutsideInlineCode(colText);
 
                 // <br> を空白へ（インラインコード内は触らない）
                 colText = MdTextUtil.replaceBrOutsideInlineCode(colText, " ");
@@ -56,13 +64,13 @@ public final class MarkdownTable {
                 Cell cell = row.createCell(colIndex++);
 
                 if (isHeaderRow) {
-                    String joined = MarkdownInline.brToSingleSpace(colText); // 必ず split を通る
+                    String joined = MarkdownInline.brToSingleSpace(colText); // ★必ず split を通る
                     if (!joined.isEmpty()) {
                         cell.setCellValue(stripInlineMarkdown(joined));
                     }
                     cell.setCellStyle(styles.tableHeaderStyle);
                 } else {
-                    String joined = MarkdownInline.brToSingleSpace(colText); // 必ず split を通る
+                    String joined = MarkdownInline.brToSingleSpace(colText); // ★必ず split を通る
                     if (!joined.isEmpty()) {
                         MarkdownInline.setMarkdownRichTextCell(wb, cell, joined, styles.tableBodyStyle);
                     } else {
@@ -75,6 +83,43 @@ public final class MarkdownTable {
         }
 
         return colIndex - 1;
+    }
+    
+    /**
+     * pos の '|' が "\|" のようにエスケープされているか判定する。
+     * 直前に連続する '\' の個数が奇数ならエスケープ扱い。
+     */
+    private static boolean isEscapedPipe(String s, int pos) {
+        if (pos <= 0 || pos >= s.length() || s.charAt(pos) != '|') return false;
+        int bs = 0;
+        for (int i = pos - 1; i >= 0 && s.charAt(i) == '\\'; i--) {
+            bs++;
+        }
+        return (bs % 2) == 1;
+    }
+
+    /**
+     * テーブルセル内の "\|" を "|" に戻す（インラインコード `...` の中は変更しない）。
+     */
+    private static String unescapePipeOutsideInlineCode(String s) {
+        if (s == null || s.isEmpty()) return s;
+        StringBuilder out = new StringBuilder(s.length());
+        boolean inCode = false;
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch == '`') {
+                inCode = !inCode;
+                out.append(ch);
+                continue;
+            }
+            if (!inCode && ch == '\\' && i + 1 < s.length() && s.charAt(i + 1) == '|') {
+                out.append('|');
+                i++; // '|' を消費
+                continue;
+            }
+            out.append(ch);
+        }
+        return out.toString();
     }
 
     public static void closeTableIfOpen(org.apache.poi.ss.usermodel.Sheet sheet, MdStyle styles, RenderState st) {
