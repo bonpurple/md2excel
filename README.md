@@ -184,5 +184,4 @@ next line (still quote)
 ---
 
 ## ライセンス
-本 README は提示されたソースコードから内容を説明するために生成しています。  
-プロジェクトのライセンスは、別途 `LICENSE` 等で管理してください。
+Apache License 2.0（詳細は [`LICENSE`](LICENSE) を参照）

@@ -1,0 +1,10 @@
+md2excel
+Copyright 2025 bonpurple
+
+This product is licensed under the Apache License, Version 2.0.
+
+This product is designed to work with Apache POI (and its dependencies),
+which is developed by the Apache Software Foundation (ASF).
+
+The Apache POI libraries are not bundled in this repository; users obtain
+the required JAR files separately (see lib/README.md).
