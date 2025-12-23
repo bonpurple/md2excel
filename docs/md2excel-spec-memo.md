@@ -149,6 +149,10 @@
   - `rowIndex > 0 && lastRowType != BLANK` のときだけ 1 行挿入
 - 見出し直後：`ensureAutoBlankIfPrevHeading()`
   - `lastRowType == HEADING` のときだけ 1 行挿入
+- 引用の直後：`ensureAutoBlankIfPrevBlockQuote()`
+  - `lastWasBlockQuote == true` かつ `lastRowType != BLANK` のときだけ 1 行挿入
+- コード行の直後：`ensureAutoBlankIfPrevCodeBlock()`
+  - `lastContentType == CODE` かつ `lastRowType != BLANK` のときだけ 1 行挿入
 - 自動空行は reuse 対象にしない：
   - `lastBlankFromMarkdown=false`, `lastBlankRowIndex=-1`
 
@@ -194,6 +198,9 @@
   2) 番号付き説明行
   3) 同インデントの通常段落連結
   の順で判定し、該当すれば “同一セルへ追記” して行を作らない。
+- 上記以外に、Markdown 空行の再利用が発生するケース：
+  - indent==0 の通常文で、直前が Markdown 空行かつ直前コンテンツが NORMAL または CODE の場合、
+    その空行を再利用して 1 行詰める（テーブル直後の空行は対象外）
 
 #### 8.2.1 通常テキスト内の `<br>`（説明行含む）
 
@@ -216,6 +223,7 @@
 - 2行目以降：**次行 + 1つ右の列**（C列〜）に縦展開する。
 - 行末が `<br>` の場合、**次入力行（NORMAL 等）も右セル側へ継続**して吸う。
   - このモードでは既存の「箇条書き説明行の同一セル追記」は無効化する（暴発防止）。
+  - 右セルが既にある場合は「1行目を同一セルに追記」、`<br>` で分割された2行目以降は同列で新規行に縦展開する。
 
 ### 8.4 番号付き（`1. ...`）
 
@@ -233,6 +241,7 @@
 - 2行目以降：**次行 + 1つ右の列**（C列〜）に縦展開する。
 - 行末が `<br>` の場合、**次入力行（NORMAL 等）も右セル側へ継続**して吸う。
   - このモードでは既存の番号付き「説明行」追記（inNestedNumberBlock）は無効化する。
+  - 右セルが既にある場合は「1行目を同一セルに追記」、`<br>` で分割された2行目以降は同列で新規行に縦展開する。
 
 ### 8.5 リストブロック後の注釈行／子段落
 
@@ -254,7 +263,7 @@
 - 連続引用で `<br>` が無い場合、かつ直前が OTHER で Markdown 空行が挟まっていない場合：
   - 同一セルへ追記（appendMarkdownWithSpace）
 - それ以外：
-  - 列：`1 + depthForIndent(listStack, indent)`
+  - 列：`calcBlockStartCol(indent)` に従う（インデント0はA列、インデントありはB列起点）
   - セルに `quoteText` を出力
 - ブロッククローズ：
   - ブロック終了時（境界処理など）に BlockQuoteUtil.closeBlockQuoteIfOpen
@@ -282,13 +291,13 @@
 
 - ` ``` ` 行自体は出力しない（境界のみ）
 - 開始側で `currentCodeBlockIndent = li.indent`
+- 開始時に直前が引用なら自動空行を 1 行挿入する（ensureAutoBlankIfPrevBlockQuote）
 - `st.inCodeBlock` をトグルする
 
 ### 9.2 コード行（CODE_LINE）
 
 - 書き込み列：
-  - `depth = getDepthForIndent(listStack, currentCodeBlockIndent)`
-  - `codeCol = clamp(1 + depth)`
+  - `codeCol = calcBlockStartCol(currentCodeBlockIndent)`（インデント0はA列起点）
 - 左端トリム：
   - ブロック内最初の行の leadingSpaces を `codeBlockBaseIndent` として保持
   - `trimSpaces = min(leadingSpaces, codeBlockBaseIndent)`
@@ -316,6 +325,7 @@
 
 - `MarkdownTable.isTableLine(raw)`：
   - `trim()` して `|` 始まり、かつ `|` が 2 つ以上
+- セル分割時は「先頭と末尾の1文字」を落として解析する（末尾 `|` 前提）
 - 区切り行：
   - `MarkdownTable.isTableSeparatorLine(trimmed)` は “行を作らない”
   - ただし RenderState は「テーブル中」として更新する
@@ -323,20 +333,21 @@
 ### 11.2 配置列
 
 - テーブル開始列（ヘッダ行だけ決定）：
-  - `depth = getDepthForIndent(listStack, indent)`
-  - `startCol = 1 + depth`
+  - `startCol = calcBlockStartCol(indent)`（インデント0はA列起点）
 - 2行目以降：`currentTableStartCol` を継続使用
 
 ### 11.3 セル内容・スタイル
 
 - 列分割は `split("\\|")` ではなく **手書きパース**で行う（正規表現依存を避ける）。
+  - `` `...` `` 内の `|` は区切りにしない
+  - `\\|` はエスケープされた区切りとして扱い、表示時は `|` に戻す
 - ヘッダ行（最初の TABLE_ROW）：
-  - `splitByBrPreserveFormatting()` を通したうえで、分割結果を **半角スペースで連結**して 1セルに収める
-  - その後 `stripInlineMarkdown()`（`**` と `` ` `` の単純除去）してセル文字列にする
+  - `<br>` は `replaceBrOutsideInlineCode` で空白化し、`collapseSpaces` で 1 個に寄せる
+  - 連結後の文字列を `MarkdownInline.brToSingleSpace()` 経由で `MarkdownInline.setMarkdownRichTextCell` に渡す（太字/インラインコードは維持）
   - `tableHeaderStyle`
 - ボディ行：
-  - `splitByBrPreserveFormatting()` を通したうえで、分割結果を **半角スペースで連結**して 1セルに収める
-  - 連結後の Markdown を `MarkdownInline.setMarkdownRichTextCell` で解釈（太字などは維持）
+  - `<br>` は `replaceBrOutsideInlineCode` で空白化し、`collapseSpaces` で 1 個に寄せる
+  - 連結後の文字列を `MarkdownInline.brToSingleSpace()` 経由で `MarkdownInline.setMarkdownRichTextCell` に渡す（太字/インラインコードは維持）
   - `tableBodyStyle`
 - テーブル終了時：
   - 最終ボディ行に `tableBodyLastRowStyle` を適用（下線なし）
