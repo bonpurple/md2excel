@@ -1,4 +1,3 @@
-````markdown
 # md2excel（Markdown → Excel .xlsx 変換）
 
 Markdown ファイル（UTF-8）を読み取り、Apache POI を使って Excel（.xlsx）に整形出力するツールです。  
@@ -125,30 +124,10 @@ java ... md2excel.MarkdownToExcel <input.md> [output.xlsx] [mergeCols] [fontName
 
 ---
 
-## 依存ライブラリ（例）
+## 依存ライブラリ（手動配置）
 
-実際のビルド方式（Maven/Gradle 等）はプロジェクト側に合わせてください。  
-最低限、Apache POI の `poi-ooxml` が必要です。
-
-### Maven（例）
-
-```xml
-<dependencies>
-  <dependency>
-    <groupId>org.apache.poi</groupId>
-    <artifactId>poi-ooxml</artifactId>
-    <version><!-- 任意の POI バージョン --></version>
-  </dependency>
-</dependencies>
-```
-
-### Gradle（例）
-
-```gradle
-dependencies {
-  implementation "org.apache.poi:poi-ooxml:<poi-version>"
-}
-```
+このリポジトリは Maven/Gradle を使用しません。  
+依存 jar は Git に含めないため、[lib/README.md](lib/README.md) の手順に従って `lib/` に配置し、Eclipse の Build Path に追加してください。
 
 ---
 
@@ -207,4 +186,3 @@ next line (still quote)
 ## ライセンス
 本 README は提示されたソースコードから内容を説明するために生成しています。  
 プロジェクトのライセンスは、別途 `LICENSE` 等で管理してください。
-````
