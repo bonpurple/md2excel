@@ -102,6 +102,7 @@ public final class MarkdownRenderer {
             if (trimmed.startsWith("#")) {
                 int level = MdTextUtil.countHeadingLevel(trimmed);
                 String text = trimmed.substring(level).trim();
+                text = MdTextUtil.stripHeadingClosingHashes(text);
                 return new LineInfo(rawLine, trimmed, indent, LineKind.HEADING, level, text, null, null);
             }
 
@@ -835,11 +836,10 @@ public final class MarkdownRenderer {
             return st.mergeLastCol - 1;
         return col;
     }
-    
+
     /**
-     * コードブロック/引用/テーブル等の「ブロック開始列」を決める。
-     * - インデント0は A列(0) 起点
-     * - インデントありは従来どおり B列(1) 起点で深さに応じて右へ
+     * コードブロック/引用/テーブル等の「ブロック開始列」を決める。 - インデント0は A列(0) 起点 - インデントありは従来どおり B列(1)
+     * 起点で深さに応じて右へ
      */
     private static int calcBlockStartCol(int indent, RenderState st) {
         if (indent <= 0) {
@@ -852,7 +852,8 @@ public final class MarkdownRenderer {
             col = 1 + depth;
         } else {
             int level = indent / 2;
-            if (level < 0) level = 0;
+            if (level < 0)
+                level = 0;
             col = 1 + level;
         }
         return clampCol(col, st);

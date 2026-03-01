@@ -75,6 +75,39 @@ public final class MdTextUtil {
         return true; // 末尾まで空白でも OK（元の ".*" は空でもマッチする）
     }
 
+    // "## title ##" のような閉じ # を取り除く（末尾は空白のみでもOK）
+    public static String stripHeadingClosingHashes(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+
+        int end = text.length();
+        while (end > 0 && Character.isWhitespace(text.charAt(end - 1))) {
+            end--;
+        }
+        if (end == 0) {
+            return "";
+        }
+
+        int hashEnd = end;
+        while (hashEnd > 0 && text.charAt(hashEnd - 1) == '#') {
+            hashEnd--;
+        }
+        if (hashEnd == end) {
+            return text;
+        }
+
+        if (hashEnd == 0 || !Character.isWhitespace(text.charAt(hashEnd - 1))) {
+            return text;
+        }
+
+        int trimEnd = hashEnd - 1;
+        while (trimEnd > 0 && Character.isWhitespace(text.charAt(trimEnd - 1))) {
+            trimEnd--;
+        }
+        return text.substring(0, trimEnd);
+    }
+
     public static String replaceBrOutsideInlineCode(String s, String replacement) {
         if (s == null || s.isEmpty())
             return s;
