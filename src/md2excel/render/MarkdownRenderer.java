@@ -108,7 +108,7 @@ public final class MarkdownRenderer {
             // 8) list
             if (trimmed.length() >= 2) {
                 char m = trimmed.charAt(0);
-                if ((m == '*' || m == '-') && Character.isWhitespace(trimmed.charAt(1))) {
+                if ((m == '*' || m == '-' || m == '+') && Character.isWhitespace(trimmed.charAt(1))) {
                     String content = trimmed.substring(2).trim();
                     String bulletMd = "・ " + content;
                     return new LineInfo(rawLine, trimmed, indent, LineKind.BULLET_ITEM, -1, null, null, bulletMd);
