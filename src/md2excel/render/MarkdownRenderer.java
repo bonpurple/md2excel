@@ -81,7 +81,7 @@ public final class MarkdownRenderer {
             }
 
             // 4) horizontal rule
-            if (trimmed.equals("---")) {
+            if (MdTextUtil.isHorizontalRuleLine(trimmed)) {
                 return new LineInfo(rawLine, trimmed, indent, LineKind.HORIZONTAL_RULE, -1, null, null, null);
             }
 

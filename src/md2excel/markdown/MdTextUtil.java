@@ -141,6 +141,32 @@ public final class MdTextUtil {
         return out.toString();
     }
 
+    // "---", "***", "___", "- - -" のような水平線を判定（空白/タブのみ許可）
+    public static boolean isHorizontalRuleLine(String trimmed) {
+        if (trimmed == null || trimmed.isEmpty()) {
+            return false;
+        }
+
+        char marker = '\0';
+        int count = 0;
+        for (int i = 0; i < trimmed.length(); i++) {
+            char ch = trimmed.charAt(i);
+            if (ch == ' ' || ch == '\t') {
+                continue;
+            }
+            if (ch != '-' && ch != '_' && ch != '*') {
+                return false;
+            }
+            if (marker == '\0') {
+                marker = ch;
+            } else if (marker != ch) {
+                return false;
+            }
+            count++;
+        }
+        return count >= 3;
+    }
+
     public static int matchBrTagLen(String s, int i) {
         int n = s.length();
         if (i < 0 || i + 3 >= n)
