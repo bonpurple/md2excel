@@ -14,11 +14,7 @@ public final class MarkdownTable {
 
     public static boolean isTableLine(String line) {
         String trimmed = line.trim();
-        if (!trimmed.startsWith("|"))
-            return false;
-        int first = trimmed.indexOf('|');
-        int last = trimmed.lastIndexOf('|');
-        return first != -1 && last != -1 && first != last;
+        return countPipesOutsideInlineCode(trimmed) >= 1;
     }
 
     public static boolean isTableSeparatorLine(String trimmed) {
@@ -37,12 +33,14 @@ public final class MarkdownTable {
             int startCol) {
 
         String trimmed = line.trim();
-        if (!trimmed.startsWith("|")) {
-            return startCol - 1;
+        // 先頭/末尾の '|' は任意
+        String inner = trimmed;
+        if (inner.startsWith("|")) {
+            inner = inner.substring(1);
         }
-
-        // 既存実装と同じく「先頭と末尾の1文字」を落とす（末尾が '|' である前提の仕様）
-        String inner = trimmed.substring(1, trimmed.length() - 1);
+        if (inner.endsWith("|")) {
+            inner = inner.substring(0, inner.length() - 1);
+        }
 
         int colIndex = startCol;
 
@@ -88,13 +86,13 @@ public final class MarkdownTable {
 
         return colIndex - 1;
     }
-    
+
     /**
-     * pos の '|' が "\|" のようにエスケープされているか判定する。
-     * 直前に連続する '\' の個数が奇数ならエスケープ扱い。
+     * pos の '|' が "\|" のようにエスケープされているか判定する。 直前に連続する '\' の個数が奇数ならエスケープ扱い。
      */
     private static boolean isEscapedPipe(String s, int pos) {
-        if (pos <= 0 || pos >= s.length() || s.charAt(pos) != '|') return false;
+        if (pos <= 0 || pos >= s.length() || s.charAt(pos) != '|')
+            return false;
         int bs = 0;
         for (int i = pos - 1; i >= 0 && s.charAt(i) == '\\'; i--) {
             bs++;
@@ -102,11 +100,30 @@ public final class MarkdownTable {
         return (bs % 2) == 1;
     }
 
+    private static int countPipesOutsideInlineCode(String s) {
+        if (s == null || s.isEmpty())
+            return 0;
+        int count = 0;
+        boolean inCode = false;
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch == '`') {
+                inCode = !inCode;
+                continue;
+            }
+            if (ch == '|' && !inCode && !isEscapedPipe(s, i)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     /**
      * テーブルセル内の "\|" を "|" に戻す。
      */
     private static String unescapePipeOutsideInlineCode(String s) {
-        if (s == null || s.isEmpty()) return s;
+        if (s == null || s.isEmpty())
+            return s;
         StringBuilder out = new StringBuilder(s.length());
         for (int i = 0; i < s.length(); i++) {
             char ch = s.charAt(i);
