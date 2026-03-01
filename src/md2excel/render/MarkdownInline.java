@@ -155,14 +155,33 @@ public final class MarkdownInline {
 
         StringBuilder current = new StringBuilder();
         boolean inBold = false;
-        boolean inCode = false;
         int len = markdownText.length();
 
         for (int i = 0; i < len;) {
             char ch = markdownText.charAt(i);
 
+            // `code`（複数バッククォート含む）を先に処理
+            if (ch == '`') {
+                int tickLen = countBackticks(markdownText, i);
+                int close = findClosingBackticks(markdownText, i + tickLen, tickLen);
+                if (close >= 0) {
+                    if (current.length() > 0) {
+                        segments.add(new MdSegment(current.toString(), inBold, false));
+                        current.setLength(0);
+                    }
+                    String code = markdownText.substring(i + tickLen, close);
+                    code = normalizeCodeSpanContent(code);
+                    segments.add(new MdSegment(code, inBold, true));
+                    i = close + tickLen;
+                    continue;
+                }
+                current.append(markdownText, i, i + tickLen);
+                i += tickLen;
+                continue;
+            }
+
             // **bold** の開始/終了（コード中では無視）
-            if (!inCode && ch == '*' && i + 1 < len && markdownText.charAt(i + 1) == '*') {
+            if (ch == '*' && i + 1 < len && markdownText.charAt(i + 1) == '*') {
 
                 // 本物の太字マーカーかどうか判定
                 if (!isRealBoldMarker(markdownText, i, inBold)) {
@@ -174,22 +193,11 @@ public final class MarkdownInline {
 
                 // ここから本物のマーカーとして扱う
                 if (current.length() > 0) {
-                    segments.add(new MdSegment(current.toString(), inBold, inCode));
+                    segments.add(new MdSegment(current.toString(), inBold, false));
                     current.setLength(0);
                 }
                 inBold = !inBold;
                 i += 2;
-                continue;
-            }
-
-            // `code` の開始/終了（太字の中でも有効にする）
-            if (ch == '`') {
-                if (current.length() > 0) {
-                    segments.add(new MdSegment(current.toString(), inBold, inCode));
-                    current.setLength(0);
-                }
-                inCode = !inCode;
-                i++;
                 continue;
             }
 
@@ -199,7 +207,7 @@ public final class MarkdownInline {
         }
 
         if (current.length() > 0) {
-            segments.add(new MdSegment(current.toString(), inBold, inCode));
+            segments.add(new MdSegment(current.toString(), inBold, false));
         }
 
         return segments;
@@ -436,7 +444,6 @@ public final class MarkdownInline {
 
         StringBuilder cur = new StringBuilder();
         boolean inBold = false;
-        boolean inCode = false;
 
         // 次行の先頭に付く「太字継続用プレフィックス」
         String reopenPrefix = "";
@@ -446,8 +453,20 @@ public final class MarkdownInline {
         for (int i = 0; i < markdownText.length();) {
             char ch = markdownText.charAt(i);
 
-            // ** の扱い（コード中は無視）
-            if (!inCode && ch == '*' && i + 1 < markdownText.length() && markdownText.charAt(i + 1) == '*') {
+            // `code`（複数バッククォート含む）
+            if (ch == '`') {
+                int tickLen = countBackticks(markdownText, i);
+                int close = findClosingBackticks(markdownText, i + tickLen, tickLen);
+                if (close >= 0) {
+                    cur.append(markdownText, i, close + tickLen);
+                    i = close + tickLen;
+                    lastWasBr = false;
+                    continue;
+                }
+            }
+
+            // ** の扱い
+            if (ch == '*' && i + 1 < markdownText.length() && markdownText.charAt(i + 1) == '*') {
                 if (!isRealBoldMarker(markdownText, i, inBold)) {
                     cur.append("**");
                     i += 2;
@@ -460,37 +479,26 @@ public final class MarkdownInline {
                 continue;
             }
 
-            // ` の扱い
-            if (ch == '`') {
-                cur.append('`');
-                inCode = !inCode;
-                i++;
-                lastWasBr = false;
+            int brLen = MdTextUtil.matchBrTagLen(markdownText, i);
+            if (brLen > 0) {
+                // 行を確定（太字が開いていたら閉じる）
+                String line = cur.toString();
+                if (inBold)
+                    line = line + "**";
+
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty())
+                    out.add(trimmed);
+
+                // 次行の builder を用意（太字継続なら reopen）
+                cur.setLength(0);
+                reopenPrefix = inBold ? "**" : "";
+                if (!reopenPrefix.isEmpty())
+                    cur.append(reopenPrefix);
+
+                i += brLen;
+                lastWasBr = true;
                 continue;
-            }
-
-            if (!inCode) {
-                int brLen = MdTextUtil.matchBrTagLen(markdownText, i);
-                if (brLen > 0) {
-                    // 行を確定（太字が開いていたら閉じる）
-                    String line = cur.toString();
-                    if (inBold)
-                        line = line + "**";
-
-                    String trimmed = line.trim();
-                    if (!trimmed.isEmpty())
-                        out.add(trimmed);
-
-                    // 次行の builder を用意（太字継続なら reopen）
-                    cur.setLength(0);
-                    reopenPrefix = inBold ? "**" : "";
-                    if (!reopenPrefix.isEmpty())
-                        cur.append(reopenPrefix);
-
-                    i += brLen;
-                    lastWasBr = true;
-                    continue;
-                }
             }
 
             // 通常文字
@@ -537,5 +545,49 @@ public final class MarkdownInline {
             return "";
         // lines は trim 済み想定なので " " join で要求どおりになる
         return String.join(" ", sp.lines);
+    }
+
+    private static int countBackticks(String text, int pos) {
+        int count = 0;
+        while (pos + count < text.length() && text.charAt(pos + count) == '`') {
+            count++;
+        }
+        return count;
+    }
+
+    private static int findClosingBackticks(String text, int start, int tickLen) {
+        for (int i = start; i < text.length();) {
+            if (text.charAt(i) != '`') {
+                i++;
+                continue;
+            }
+            int runLen = countBackticks(text, i);
+            if (runLen == tickLen) {
+                return i;
+            }
+            i += runLen;
+        }
+        return -1;
+    }
+
+    private static String normalizeCodeSpanContent(String code) {
+        if (code == null || code.isEmpty()) {
+            return code;
+        }
+        int start = 0;
+        int end = code.length();
+        boolean leadingSpace = start < end && Character.isWhitespace(code.charAt(start));
+        boolean trailingSpace = end > start && Character.isWhitespace(code.charAt(end - 1));
+        if (leadingSpace && trailingSpace) {
+            int i = start;
+            while (i < end && Character.isWhitespace(code.charAt(i))) {
+                i++;
+            }
+            if (i < end) {
+                start++;
+                end--;
+            }
+        }
+        return code.substring(start, end);
     }
 }
