@@ -56,6 +56,10 @@ public final class MarkdownInline {
         final Font boldFont;
         final Font italicFont;
         final Font boldItalicFont;
+        final Font strikeFont;
+        final Font strikeBoldFont;
+        final Font strikeItalicFont;
+        final Font strikeBoldItalicFont;
         final XSSFFont codeAscii;
         final XSSFFont codeCjk;
         final XSSFFont codeAsciiBold;
@@ -63,7 +67,8 @@ public final class MarkdownInline {
         boolean baseBold;
 
         MarkdownFonts(Font baseFont, Font boldFont, Font italicFont, Font boldItalicFont, XSSFFont codeAscii,
-                XSSFFont codeCjk, XSSFFont codeAsciiBold, XSSFFont codeCjkBold) {
+                XSSFFont codeCjk, XSSFFont codeAsciiBold, XSSFFont codeCjkBold, Font strikeFont, Font strikeBoldFont,
+                Font strikeItalicFont, Font strikeBoldItalicFont) {
             this.baseFont = baseFont;
             this.boldFont = boldFont;
             this.italicFont = italicFont;
@@ -72,6 +77,10 @@ public final class MarkdownInline {
             this.codeCjk = codeCjk;
             this.codeAsciiBold = codeAsciiBold;
             this.codeCjkBold = codeCjkBold;
+            this.strikeFont = strikeFont;
+            this.strikeBoldFont = strikeBoldFont;
+            this.strikeItalicFont = strikeItalicFont;
+            this.strikeBoldItalicFont = strikeBoldItalicFont;
         }
     }
 
@@ -79,17 +88,19 @@ public final class MarkdownInline {
         final String text;
         final boolean inBold;
         final boolean inItalic;
+        final boolean inStrike;
         final boolean inCode;
 
-        MdSegment(String text, boolean inBold, boolean inItalic, boolean inCode) {
+        MdSegment(String text, boolean inBold, boolean inItalic, boolean inStrike, boolean inCode) {
             this.text = text;
             this.inBold = inBold;
             this.inItalic = inItalic;
+            this.inStrike = inStrike;
             this.inCode = inCode;
         }
     }
 
-    // markdownText: **太字** や *斜体* や `code` を含む Markdown 文字列
+    // markdownText: **太字** や *斜体* や ~~打ち消し~~ や `code` を含む Markdown 文字列
     // baseStyle : 箇条書き・番号付き・通常テキストなどのセルスタイル
     public static void setMarkdownRichTextCell(Workbook workbook, Cell cell, String markdownText, CellStyle baseStyle) {
 
@@ -162,6 +173,7 @@ public final class MarkdownInline {
         StringBuilder current = new StringBuilder();
         boolean inBold = false;
         boolean inItalic = false;
+        boolean inStrike = false;
         int len = markdownText.length();
 
         for (int i = 0; i < len;) {
@@ -173,17 +185,33 @@ public final class MarkdownInline {
                 int close = findClosingBackticks(markdownText, i + tickLen, tickLen);
                 if (close >= 0) {
                     if (current.length() > 0) {
-                        segments.add(new MdSegment(current.toString(), inBold, inItalic, false));
+                        segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
                         current.setLength(0);
                     }
                     String code = markdownText.substring(i + tickLen, close);
                     code = normalizeCodeSpanContent(code);
-                    segments.add(new MdSegment(code, inBold, inItalic, true));
+                    segments.add(new MdSegment(code, inBold, inItalic, inStrike, true));
                     i = close + tickLen;
                     continue;
                 }
                 current.append(markdownText, i, i + tickLen);
                 i += tickLen;
+                continue;
+            }
+
+            // ~~strike~~ の開始/終了（コード中では無視）
+            if (ch == '~' && i + 1 < len && markdownText.charAt(i + 1) == '~') {
+                if (!isRealStrikeMarker(markdownText, i, inStrike)) {
+                    current.append("~~");
+                    i += 2;
+                    continue;
+                }
+                if (current.length() > 0) {
+                    segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
+                    current.setLength(0);
+                }
+                inStrike = !inStrike;
+                i += 2;
                 continue;
             }
 
@@ -200,7 +228,7 @@ public final class MarkdownInline {
 
                 // ここから本物のマーカーとして扱う
                 if (current.length() > 0) {
-                    segments.add(new MdSegment(current.toString(), inBold, inItalic, false));
+                    segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
                     current.setLength(0);
                 }
                 inBold = !inBold;
@@ -216,7 +244,7 @@ public final class MarkdownInline {
                     continue;
                 }
                 if (current.length() > 0) {
-                    segments.add(new MdSegment(current.toString(), inBold, inItalic, false));
+                    segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
                     current.setLength(0);
                 }
                 inItalic = !inItalic;
@@ -230,7 +258,7 @@ public final class MarkdownInline {
         }
 
         if (current.length() > 0) {
-            segments.add(new MdSegment(current.toString(), inBold, inItalic, false));
+            segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
         }
 
         return segments;
@@ -266,6 +294,30 @@ public final class MarkdownInline {
         boldItalic.setBold(true);
         boldItalic.setItalic(true);
 
+        Font strike = wb.createFont();
+        strike.setFontName(base.getFontName());
+        strike.setFontHeightInPoints(base.getFontHeightInPoints());
+        strike.setStrikeout(true);
+
+        Font strikeBold = wb.createFont();
+        strikeBold.setFontName(base.getFontName());
+        strikeBold.setFontHeightInPoints(base.getFontHeightInPoints());
+        strikeBold.setBold(true);
+        strikeBold.setStrikeout(true);
+
+        Font strikeItalic = wb.createFont();
+        strikeItalic.setFontName(base.getFontName());
+        strikeItalic.setFontHeightInPoints(base.getFontHeightInPoints());
+        strikeItalic.setItalic(true);
+        strikeItalic.setStrikeout(true);
+
+        Font strikeBoldItalic = wb.createFont();
+        strikeBoldItalic.setFontName(base.getFontName());
+        strikeBoldItalic.setFontHeightInPoints(base.getFontHeightInPoints());
+        strikeBoldItalic.setBold(true);
+        strikeBoldItalic.setItalic(true);
+        strikeBoldItalic.setStrikeout(true);
+
         // インラインコード（赤）
         XSSFColor inlineRed = new XSSFColor(new Color(180, 0, 0), null);
 
@@ -292,7 +344,7 @@ public final class MarkdownInline {
         codeCjkBold.setColor(inlineRed);
 
         MarkdownFonts mf = new MarkdownFonts(base, bold, italic, boldItalic, codeAscii, codeCjk, codeAsciiBold,
-                codeCjkBold);
+                codeCjkBold, strike, strikeBold, strikeItalic, strikeBoldItalic);
         mf.baseBold = baseBold;
 
         c.inlineFontsByBaseFontIndex.put(key, mf);
@@ -342,6 +394,16 @@ public final class MarkdownInline {
                     } else {
                         rich.applyFont(start, end, wantBoldCode ? fonts.codeCjkBold : fonts.codeCjk);
                     }
+                }
+            } else if (seg.inStrike) {
+                if (seg.inBold && seg.inItalic) {
+                    rich.applyFont(segStart, segEnd, fonts.strikeBoldItalicFont);
+                } else if (seg.inBold) {
+                    rich.applyFont(segStart, segEnd, fonts.strikeBoldFont);
+                } else if (seg.inItalic) {
+                    rich.applyFont(segStart, segEnd, fonts.strikeItalicFont);
+                } else {
+                    rich.applyFont(segStart, segEnd, fonts.strikeFont);
                 }
             } else if (seg.inBold && seg.inItalic) {
                 rich.applyFont(segStart, segEnd, fonts.boldItalicFont);
@@ -412,6 +474,29 @@ public final class MarkdownInline {
                 return false;
             }
             if (markerChar == '_' && pos > 0 && Character.isLetterOrDigit(prev) && Character.isLetterOrDigit(next)) {
+                return false;
+            }
+            return true;
+        } else {
+            if (Character.isWhitespace(prev)) {
+                return false;
+            }
+            return true;
+        }
+    }
+
+    // "~~" が「本物の打ち消しマーカー」かどうかを判定する。
+    // text.charAt(pos) == '~' かつ text.charAt(pos+1) == '~' 前提。
+    private static boolean isRealStrikeMarker(String text, int pos, boolean inStrike) {
+        int len = text.length();
+        char prev = (pos > 0) ? text.charAt(pos - 1) : '\0';
+        char next = (pos + 2 < len) ? text.charAt(pos + 2) : '\0';
+
+        if (!inStrike) {
+            if (pos + 2 >= len) {
+                return false;
+            }
+            if (Character.isWhitespace(next)) {
                 return false;
             }
             return true;
@@ -516,8 +601,10 @@ public final class MarkdownInline {
         StringBuilder cur = new StringBuilder();
         boolean inBold = false;
         boolean inItalic = false;
+        boolean inStrike = false;
         String boldMarker = "";
         String italicMarker = "";
+        String strikeMarker = "";
 
         // 次行の先頭に付く「強調継続用プレフィックス」
         String reopenPrefix = "";
@@ -537,6 +624,25 @@ public final class MarkdownInline {
                     lastWasBr = false;
                     continue;
                 }
+            }
+
+            // ~~ の扱い
+            if (ch == '~' && i + 1 < markdownText.length() && markdownText.charAt(i + 1) == '~') {
+                if (!isRealStrikeMarker(markdownText, i, inStrike)) {
+                    cur.append("~~");
+                    i += 2;
+                    continue;
+                }
+                cur.append("~~");
+                if (!inStrike) {
+                    strikeMarker = "~~";
+                } else {
+                    strikeMarker = "";
+                }
+                inStrike = !inStrike;
+                i += 2;
+                lastWasBr = false;
+                continue;
             }
 
             // ** / __ の扱い
@@ -583,6 +689,8 @@ public final class MarkdownInline {
                 String line = cur.toString();
                 if (inItalic)
                     line = line + (italicMarker.isEmpty() ? "*" : italicMarker);
+                if (inStrike)
+                    line = line + (strikeMarker.isEmpty() ? "~~" : strikeMarker);
                 if (inBold)
                     line = line + (boldMarker.isEmpty() ? "**" : boldMarker);
 
@@ -597,6 +705,8 @@ public final class MarkdownInline {
                     reopen.append(boldMarker.isEmpty() ? "**" : boldMarker);
                 if (inItalic)
                     reopen.append(italicMarker.isEmpty() ? "*" : italicMarker);
+                if (inStrike)
+                    reopen.append(strikeMarker.isEmpty() ? "~~" : strikeMarker);
                 reopenPrefix = reopen.toString();
                 if (!reopenPrefix.isEmpty())
                     cur.append(reopenPrefix);
@@ -616,6 +726,8 @@ public final class MarkdownInline {
         String line = cur.toString();
         if (inItalic)
             line = line + (italicMarker.isEmpty() ? "*" : italicMarker);
+        if (inStrike)
+            line = line + (strikeMarker.isEmpty() ? "~~" : strikeMarker);
         if (inBold)
             line = line + (boldMarker.isEmpty() ? "**" : boldMarker);
         String trimmed = line.trim();
@@ -628,8 +740,8 @@ public final class MarkdownInline {
         // 末尾が <br> の場合、上で reopenPrefix だけ入った空行が out に入る可能性があるので除去
         if (endsWithBr && !out.isEmpty()) {
             String last = out.get(out.size() - 1);
-            if (last.equals("**") || last.equals("__") || last.equals("*") || last.equals("_") || last.equals("`")
-                    || last.isEmpty()) {
+            if (last.equals("**") || last.equals("__") || last.equals("*") || last.equals("_") || last.equals("~~")
+                    || last.equals("`") || last.isEmpty()) {
                 out.remove(out.size() - 1);
             }
         }
