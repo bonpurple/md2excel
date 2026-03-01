@@ -278,7 +278,8 @@ public final class MarkdownRenderer {
         ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.normalStyle);
 
         // 必ず split API を通す（ここが差分ポイント）
-        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(li.quoteText);
+        String quoteText = applyHardLineBreak(li.quoteText, li);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(quoteText);
         boolean hasBr = sp.endsWithBr || sp.lines.size() >= 2;
 
         // 既存の「連続引用→同一セル追記」は <br> がないときだけ
@@ -286,8 +287,8 @@ public final class MarkdownRenderer {
                 && ctx.st.lastRowType == RenderState.RowType.OTHER && !ctx.st.lastBlankFromMarkdown) {
 
             // split した結果（1行）を使っても良いが、差分最小でそのまま
-            CellAppendUtil.appendMarkdownWithSpace(ctx, ctx.st.blockQuoteCellRow, ctx.st.blockQuoteCellCol,
-                    li.quoteText, ctx.styles.normalStyle);
+            CellAppendUtil.appendMarkdownWithSpace(ctx, ctx.st.blockQuoteCellRow, ctx.st.blockQuoteCellCol, quoteText,
+                    ctx.styles.normalStyle);
 
             ctx.st.afterAppendBlockQuoteLine();
             return;
@@ -330,6 +331,7 @@ public final class MarkdownRenderer {
         }
 
         String text = (li.kind == LineKind.BLOCK_QUOTE) ? li.quoteText : li.trimmed;
+        text = applyHardLineBreak(text, li);
         text = ctx.st.pendingQuoteBrCarry + text;
 
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
@@ -395,7 +397,8 @@ public final class MarkdownRenderer {
                         : (li.headingLevel == 3) ? ctx.styles.heading3Style : ctx.styles.heading4Style;
 
         // 必ず split API を通す
-        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(li.headingText);
+        String headingText = applyHardLineBreak(li.headingText, li);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(headingText);
 
         // 1行目
         Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
@@ -427,7 +430,7 @@ public final class MarkdownRenderer {
                 : (ctx.st.pendingHeadingLevel == 2) ? ctx.styles.heading2Style
                         : (ctx.st.pendingHeadingLevel == 3) ? ctx.styles.heading3Style : ctx.styles.heading4Style;
 
-        String text = ctx.st.pendingHeadingCarry + li.trimmed;
+        String text = ctx.st.pendingHeadingCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
         for (String line : sp.lines) {
@@ -451,7 +454,8 @@ public final class MarkdownRenderer {
                 ctx.styles.normalStyle);
 
         // 必ず split API を通す（太字は維持）
-        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(li.bulletMarkdownText);
+        String bulletText = applyHardLineBreak(li.bulletMarkdownText, li);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(bulletText);
 
         // 1行目：B列
         Cell cell = row.createCell(col);
@@ -494,7 +498,8 @@ public final class MarkdownRenderer {
                 ctx.styles.normalStyle);
 
         // 必ず split API を通す
-        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(li.trimmed);
+        String numberedText = applyHardLineBreak(li.trimmed, li);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(numberedText);
 
         Cell cell = row.createCell(col);
         String first = sp.lines.isEmpty() ? "" : sp.lines.get(0);
@@ -538,7 +543,7 @@ public final class MarkdownRenderer {
             return false;
         }
 
-        String text = ctx.st.pendingListBrCarry + li.trimmed;
+        String text = ctx.st.pendingListBrCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
         // まだセルが無い（* test1<br> の直後など）なら、ここで「次行」を作って右セルに書く
@@ -587,9 +592,11 @@ public final class MarkdownRenderer {
             return;
         }
 
+        String text = applyHardLineBreak(li.trimmed, li);
+
         // ---- 1) 引用セルへの追記（ただし <br> が無い場合だけ） ----
         // <br> があると「次行セルへ展開」が必要になるため、ここでは追記しない
-        if (!MarkdownInline.hasBrOutsideInlineCode(li.trimmed) && tryAppendToOpenBlockQuote(li.trimmed, ctx)) {
+        if (!MarkdownInline.hasBrOutsideInlineCode(text) && tryAppendToOpenBlockQuote(text, ctx)) {
             return;
         }
 
@@ -599,7 +606,7 @@ public final class MarkdownRenderer {
 
         // ---- 2) 既存セルへの追記（箇条書き説明 / 番号付き説明 / 同インデント連結） ----
         // ここで true を返した場合、tryAppendToPrevCells 側で <br> 対応している想定
-        if (tryAppendToPrevCells(ctx, li.trimmed, indent)) {
+        if (tryAppendToPrevCells(ctx, text, indent)) {
             return;
         }
 
@@ -612,7 +619,7 @@ public final class MarkdownRenderer {
                 : RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
 
         // <br> を分割（インラインコード中は分割しない / 太字は維持）
-        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(li.trimmed);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
         // 1行目
         Cell cell = row.createCell(col);
@@ -649,7 +656,7 @@ public final class MarkdownRenderer {
         int col = ctx.st.pendingSameColBrCol;
         CellStyle style = ctx.st.pendingSameColBrStyle;
 
-        String text = ctx.st.pendingSameColBrCarry + li.trimmed;
+        String text = ctx.st.pendingSameColBrCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
         // 継続なので必ず「新しい行」に出す
@@ -682,7 +689,7 @@ public final class MarkdownRenderer {
             return false;
         }
 
-        String text = ctx.st.pendingSameColBrCarry + li.trimmed;
+        String text = ctx.st.pendingSameColBrCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
         for (String line : sp.lines) {
@@ -835,6 +842,19 @@ public final class MarkdownRenderer {
         if (col >= st.mergeLastCol)
             return st.mergeLastCol - 1;
         return col;
+    }
+
+    private static String applyHardLineBreak(String text, LineInfo li) {
+        boolean byBackslash = MdTextUtil.hasHardLineBreakByBackslash(li.raw);
+        boolean bySpaces = MdTextUtil.hasHardLineBreakBySpaces(li.raw);
+        if (!byBackslash && !bySpaces) {
+            return text;
+        }
+        String out = text;
+        if (byBackslash) {
+            out = MdTextUtil.removeTrailingBackslash(out);
+        }
+        return out + "<br>";
     }
 
     /**

@@ -75,6 +75,53 @@ public final class MdTextUtil {
         return true; // 末尾まで空白でも OK（元の ".*" は空でもマッチする）
     }
 
+    // 行末の半角スペース2個以上でハード改行
+    public static boolean hasHardLineBreakBySpaces(String rawLine) {
+        if (rawLine == null || rawLine.isEmpty()) {
+            return false;
+        }
+        int count = 0;
+        for (int i = rawLine.length() - 1; i >= 0; i--) {
+            char ch = rawLine.charAt(i);
+            if (ch == ' ') {
+                count++;
+                if (count >= 2) {
+                    return true;
+                }
+                continue;
+            }
+            break;
+        }
+        return false;
+    }
+
+    // 行末のバックスラッシュでハード改行（末尾の空白/タブは無視）
+    public static boolean hasHardLineBreakByBackslash(String rawLine) {
+        if (rawLine == null || rawLine.isEmpty()) {
+            return false;
+        }
+        int end = rawLine.length();
+        while (end > 0) {
+            char ch = rawLine.charAt(end - 1);
+            if (ch == ' ' || ch == '\t') {
+                end--;
+                continue;
+            }
+            return ch == '\\';
+        }
+        return false;
+    }
+
+    public static String removeTrailingBackslash(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        if (text.charAt(text.length() - 1) == '\\') {
+            return text.substring(0, text.length() - 1).trim();
+        }
+        return text;
+    }
+
     // "## title ##" のような閉じ # を取り除く（末尾は空白のみでもOK）
     public static String stripHeadingClosingHashes(String text) {
         if (text == null || text.isEmpty()) {
