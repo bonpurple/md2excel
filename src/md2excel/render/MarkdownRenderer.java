@@ -66,7 +66,7 @@ public final class MarkdownRenderer {
             int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
 
             // 1) code fence は inCodeBlock 中でも最優先（閉じるため）
-            if (trimmed.startsWith("```")) {
+            if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
                 return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, null, null);
             }
 
@@ -191,7 +191,7 @@ public final class MarkdownRenderer {
         BlockQuoteUtil.closeBlockQuoteIfOpen(ctx.sheet, ctx.styles, st);
     }
 
-    // -------------------- handler: ``` --------------------
+    // -------------------- handler: ``` / ~~~ --------------------
     private static void handleCodeFence(LineInfo li, RenderContext ctx) {
 
         if (!ctx.st.inCodeBlock) {
