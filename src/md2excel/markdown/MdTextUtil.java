@@ -33,8 +33,8 @@ public final class MdTextUtil {
         return ch >= 0x20 && ch <= 0x7E;
     }
 
-    // "1. " / "12.\t" のような形式を番号付きリストとして判定（正規表現なし）
-    // 条件：先頭が数字+、続いて '.'、続いて空白（スペース/タブ等）が1文字以上
+    // "1. " / "12.\t" / "1) " のような形式を番号付きリストとして判定（正規表現なし）
+    // 条件：先頭が数字+、続いて '.' or ')'、続いて空白（スペース/タブ等）が1文字以上
     public static boolean isNumberedListLine(String trimmed) {
         if (trimmed == null || trimmed.isEmpty()) {
             return false;
@@ -57,8 +57,12 @@ public final class MdTextUtil {
             i++;
         }
 
-        // 数字の後に '.' が必要
-        if (i >= n || trimmed.charAt(i) != '.') {
+        // 数字の後に '.' or ')' が必要
+        if (i >= n) {
+            return false;
+        }
+        char marker = trimmed.charAt(i);
+        if (marker != '.' && marker != ')') {
             return false;
         }
         i++;
