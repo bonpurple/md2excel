@@ -54,16 +54,20 @@ public final class MarkdownInline {
     private static class MarkdownFonts {
         final Font baseFont;
         final Font boldFont;
+        final Font italicFont;
+        final Font boldItalicFont;
         final XSSFFont codeAscii;
         final XSSFFont codeCjk;
         final XSSFFont codeAsciiBold;
         final XSSFFont codeCjkBold;
         boolean baseBold;
 
-        MarkdownFonts(Font baseFont, Font boldFont, XSSFFont codeAscii, XSSFFont codeCjk, XSSFFont codeAsciiBold,
-                XSSFFont codeCjkBold) {
+        MarkdownFonts(Font baseFont, Font boldFont, Font italicFont, Font boldItalicFont, XSSFFont codeAscii,
+                XSSFFont codeCjk, XSSFFont codeAsciiBold, XSSFFont codeCjkBold) {
             this.baseFont = baseFont;
             this.boldFont = boldFont;
+            this.italicFont = italicFont;
+            this.boldItalicFont = boldItalicFont;
             this.codeAscii = codeAscii;
             this.codeCjk = codeCjk;
             this.codeAsciiBold = codeAsciiBold;
@@ -74,16 +78,18 @@ public final class MarkdownInline {
     private static class MdSegment {
         final String text;
         final boolean inBold;
+        final boolean inItalic;
         final boolean inCode;
 
-        MdSegment(String text, boolean inBold, boolean inCode) {
+        MdSegment(String text, boolean inBold, boolean inItalic, boolean inCode) {
             this.text = text;
             this.inBold = inBold;
+            this.inItalic = inItalic;
             this.inCode = inCode;
         }
     }
 
-    // markdownText: **太字** や `code` を含む Markdown 文字列
+    // markdownText: **太字** や *斜体* や `code` を含む Markdown 文字列
     // baseStyle : 箇条書き・番号付き・通常テキストなどのセルスタイル
     public static void setMarkdownRichTextCell(Workbook workbook, Cell cell, String markdownText, CellStyle baseStyle) {
 
@@ -155,6 +161,7 @@ public final class MarkdownInline {
 
         StringBuilder current = new StringBuilder();
         boolean inBold = false;
+        boolean inItalic = false;
         int len = markdownText.length();
 
         for (int i = 0; i < len;) {
@@ -166,12 +173,12 @@ public final class MarkdownInline {
                 int close = findClosingBackticks(markdownText, i + tickLen, tickLen);
                 if (close >= 0) {
                     if (current.length() > 0) {
-                        segments.add(new MdSegment(current.toString(), inBold, false));
+                        segments.add(new MdSegment(current.toString(), inBold, inItalic, false));
                         current.setLength(0);
                     }
                     String code = markdownText.substring(i + tickLen, close);
                     code = normalizeCodeSpanContent(code);
-                    segments.add(new MdSegment(code, inBold, true));
+                    segments.add(new MdSegment(code, inBold, inItalic, true));
                     i = close + tickLen;
                     continue;
                 }
@@ -180,24 +187,40 @@ public final class MarkdownInline {
                 continue;
             }
 
-            // **bold** の開始/終了（コード中では無視）
-            if (ch == '*' && i + 1 < len && markdownText.charAt(i + 1) == '*') {
+            // **bold** / __bold__ の開始/終了（コード中では無視）
+            if ((ch == '*' || ch == '_') && i + 1 < len && markdownText.charAt(i + 1) == ch) {
 
                 // 本物の太字マーカーかどうか判定
-                if (!isRealBoldMarker(markdownText, i, inBold)) {
-                    // マーカー扱いしない → 「**」そのものをテキストとして追加
-                    current.append("**");
+                if (!isRealBoldMarker(markdownText, i, inBold, ch)) {
+                    // マーカー扱いしない → 「**」や「__」そのものをテキストとして追加
+                    current.append(ch).append(ch);
                     i += 2;
                     continue;
                 }
 
                 // ここから本物のマーカーとして扱う
                 if (current.length() > 0) {
-                    segments.add(new MdSegment(current.toString(), inBold, false));
+                    segments.add(new MdSegment(current.toString(), inBold, inItalic, false));
                     current.setLength(0);
                 }
                 inBold = !inBold;
                 i += 2;
+                continue;
+            }
+
+            // *italic* / _italic_ の開始/終了（コード中では無視）
+            if (ch == '*' || ch == '_') {
+                if (!isRealItalicMarker(markdownText, i, inItalic, ch)) {
+                    current.append(ch);
+                    i++;
+                    continue;
+                }
+                if (current.length() > 0) {
+                    segments.add(new MdSegment(current.toString(), inBold, inItalic, false));
+                    current.setLength(0);
+                }
+                inItalic = !inItalic;
+                i++;
                 continue;
             }
 
@@ -207,7 +230,7 @@ public final class MarkdownInline {
         }
 
         if (current.length() > 0) {
-            segments.add(new MdSegment(current.toString(), inBold, false));
+            segments.add(new MdSegment(current.toString(), inBold, inItalic, false));
         }
 
         return segments;
@@ -231,6 +254,17 @@ public final class MarkdownInline {
         bold.setFontName(base.getFontName());
         bold.setFontHeightInPoints(base.getFontHeightInPoints());
         bold.setBold(true);
+
+        Font italic = wb.createFont();
+        italic.setFontName(base.getFontName());
+        italic.setFontHeightInPoints(base.getFontHeightInPoints());
+        italic.setItalic(true);
+
+        Font boldItalic = wb.createFont();
+        boldItalic.setFontName(base.getFontName());
+        boldItalic.setFontHeightInPoints(base.getFontHeightInPoints());
+        boldItalic.setBold(true);
+        boldItalic.setItalic(true);
 
         // インラインコード（赤）
         XSSFColor inlineRed = new XSSFColor(new Color(180, 0, 0), null);
@@ -257,7 +291,8 @@ public final class MarkdownInline {
         codeCjkBold.setBold(true);
         codeCjkBold.setColor(inlineRed);
 
-        MarkdownFonts mf = new MarkdownFonts(base, bold, codeAscii, codeCjk, codeAsciiBold, codeCjkBold);
+        MarkdownFonts mf = new MarkdownFonts(base, bold, italic, boldItalic, codeAscii, codeCjk, codeAsciiBold,
+                codeCjkBold);
         mf.baseBold = baseBold;
 
         c.inlineFontsByBaseFontIndex.put(key, mf);
@@ -308,8 +343,12 @@ public final class MarkdownInline {
                         rich.applyFont(start, end, wantBoldCode ? fonts.codeCjkBold : fonts.codeCjk);
                     }
                 }
+            } else if (seg.inBold && seg.inItalic) {
+                rich.applyFont(segStart, segEnd, fonts.boldItalicFont);
             } else if (seg.inBold) {
                 rich.applyFont(segStart, segEnd, fonts.boldFont);
+            } else if (seg.inItalic) {
+                rich.applyFont(segStart, segEnd, fonts.italicFont);
             } else {
                 rich.applyFont(segStart, segEnd, fonts.baseFont);
             }
@@ -320,9 +359,9 @@ public final class MarkdownInline {
         return pos;
     }
 
-    // "**" が「本物の太字マーカー」かどうかを判定する。
-    // text.charAt(pos) == '*' かつ text.charAt(pos+1) == '*' 前提。
-    private static boolean isRealBoldMarker(String text, int pos, boolean inBold) {
+    // "**" / "__" が「本物の太字マーカー」かどうかを判定する。
+    // text.charAt(pos) == markerChar かつ text.charAt(pos+1) == markerChar 前提。
+    private static boolean isRealBoldMarker(String text, int pos, boolean inBold, char markerChar) {
         int len = text.length();
 
         char prev = (pos > 0) ? text.charAt(pos - 1) : '\0';
@@ -342,12 +381,44 @@ public final class MarkdownInline {
                 return false;
             }
 
+            // "_" が単語中ならマーカー扱いしない
+            if (markerChar == '_' && pos > 0 && pos + 2 < len && Character.isLetterOrDigit(prev)
+                    && Character.isLetterOrDigit(next)) {
+                return false;
+            }
+
             // それ以外は素直に「開きマーカー」とみなす
             return true;
         } else {
             // 「閉じ側」の判定（太字中で見つかった "**"）
             // 基本的に全部「本物の閉じマーカー」として扱う。
             // （TE** のようなケースではそもそも inBold が true になっていないので、ここには来ない）
+            return true;
+        }
+    }
+
+    // "*" / "_" が「本物の斜体マーカー」かどうかを判定する。
+    // text.charAt(pos) == markerChar 前提。
+    private static boolean isRealItalicMarker(String text, int pos, boolean inItalic, char markerChar) {
+        int len = text.length();
+        char prev = (pos > 0) ? text.charAt(pos - 1) : '\0';
+        char next = (pos + 1 < len) ? text.charAt(pos + 1) : '\0';
+
+        if (!inItalic) {
+            if (pos + 1 >= len) {
+                return false;
+            }
+            if (Character.isWhitespace(next)) {
+                return false;
+            }
+            if (markerChar == '_' && pos > 0 && Character.isLetterOrDigit(prev) && Character.isLetterOrDigit(next)) {
+                return false;
+            }
+            return true;
+        } else {
+            if (Character.isWhitespace(prev)) {
+                return false;
+            }
             return true;
         }
     }
@@ -428,7 +499,7 @@ public final class MarkdownInline {
     static final class BrSplitResult {
         final List<String> lines; // その場で出力できる行（空は基本入れない）
         final boolean endsWithBr; // 末尾が <br> で終わっている（次入力行へ継続）
-        final String carryPrefix; // 末尾 <br> 後に継続するとき先頭に付ける接頭辞（太字継続など）
+        final String carryPrefix; // 末尾 <br> 後に継続するとき先頭に付ける接頭辞（強調継続など）
 
         BrSplitResult(List<String> lines, boolean endsWithBr, String carryPrefix) {
             this.lines = lines;
@@ -444,8 +515,11 @@ public final class MarkdownInline {
 
         StringBuilder cur = new StringBuilder();
         boolean inBold = false;
+        boolean inItalic = false;
+        String boldMarker = "";
+        String italicMarker = "";
 
-        // 次行の先頭に付く「太字継続用プレフィックス」
+        // 次行の先頭に付く「強調継続用プレフィックス」
         String reopenPrefix = "";
 
         boolean lastWasBr = false;
@@ -465,16 +539,40 @@ public final class MarkdownInline {
                 }
             }
 
-            // ** の扱い
-            if (ch == '*' && i + 1 < markdownText.length() && markdownText.charAt(i + 1) == '*') {
-                if (!isRealBoldMarker(markdownText, i, inBold)) {
-                    cur.append("**");
+            // ** / __ の扱い
+            if ((ch == '*' || ch == '_') && i + 1 < markdownText.length() && markdownText.charAt(i + 1) == ch) {
+                if (!isRealBoldMarker(markdownText, i, inBold, ch)) {
+                    cur.append(ch).append(ch);
                     i += 2;
                     continue;
                 }
-                cur.append("**");
+                cur.append(ch).append(ch);
+                if (!inBold) {
+                    boldMarker = "" + ch + ch;
+                } else {
+                    boldMarker = "";
+                }
                 inBold = !inBold;
                 i += 2;
+                lastWasBr = false;
+                continue;
+            }
+
+            // * / _ の扱い
+            if (ch == '*' || ch == '_') {
+                if (!isRealItalicMarker(markdownText, i, inItalic, ch)) {
+                    cur.append(ch);
+                    i++;
+                    continue;
+                }
+                cur.append(ch);
+                if (!inItalic) {
+                    italicMarker = "" + ch;
+                } else {
+                    italicMarker = "";
+                }
+                inItalic = !inItalic;
+                i++;
                 lastWasBr = false;
                 continue;
             }
@@ -483,16 +581,23 @@ public final class MarkdownInline {
             if (brLen > 0) {
                 // 行を確定（太字が開いていたら閉じる）
                 String line = cur.toString();
+                if (inItalic)
+                    line = line + (italicMarker.isEmpty() ? "*" : italicMarker);
                 if (inBold)
-                    line = line + "**";
+                    line = line + (boldMarker.isEmpty() ? "**" : boldMarker);
 
                 String trimmed = line.trim();
                 if (!trimmed.isEmpty())
                     out.add(trimmed);
 
-                // 次行の builder を用意（太字継続なら reopen）
+                // 次行の builder を用意（強調継続なら reopen）
                 cur.setLength(0);
-                reopenPrefix = inBold ? "**" : "";
+                StringBuilder reopen = new StringBuilder();
+                if (inBold)
+                    reopen.append(boldMarker.isEmpty() ? "**" : boldMarker);
+                if (inItalic)
+                    reopen.append(italicMarker.isEmpty() ? "*" : italicMarker);
+                reopenPrefix = reopen.toString();
                 if (!reopenPrefix.isEmpty())
                     cur.append(reopenPrefix);
 
@@ -509,8 +614,10 @@ public final class MarkdownInline {
 
         // 末尾処理：最後の行
         String line = cur.toString();
+        if (inItalic)
+            line = line + (italicMarker.isEmpty() ? "*" : italicMarker);
         if (inBold)
-            line = line + "**";
+            line = line + (boldMarker.isEmpty() ? "**" : boldMarker);
         String trimmed = line.trim();
         if (!trimmed.isEmpty())
             out.add(trimmed);
@@ -521,7 +628,8 @@ public final class MarkdownInline {
         // 末尾が <br> の場合、上で reopenPrefix だけ入った空行が out に入る可能性があるので除去
         if (endsWithBr && !out.isEmpty()) {
             String last = out.get(out.size() - 1);
-            if (last.equals("**") || last.equals("`") || last.isEmpty()) {
+            if (last.equals("**") || last.equals("__") || last.equals("*") || last.equals("_") || last.equals("`")
+                    || last.isEmpty()) {
                 out.remove(out.size() - 1);
             }
         }
