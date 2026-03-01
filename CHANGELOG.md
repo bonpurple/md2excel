@@ -5,6 +5,27 @@
 
 ---
 
+## [2.0.0] - 2026-02-28
+
+### Added
+- 箇条書き `- `（先頭が `-` + 空白の行）のレンダリングに対応（既存の `* ` と同等の扱い）
+
+### Changed
+- パッケージ構成を整理（例: `md2excel.app` / `md2excel.config` / `md2excel.excel` / `md2excel.markdown` / `md2excel.render`）
+- エントリポイント（main）の完全修飾クラス名が変更
+  - `md2excel.MarkdownToExcel` → `md2excel.app.MarkdownToExcel`
+- パッケージ分割に伴い、外部参照が必要なクラス／メンバを `public` 化（例: `MdStyle` のスタイル、`RenderContext`、`MarkdownRenderer.render` など）
+- 設定の読み込み方式を変更：**常にダイアログ（GUI）で設定**するように変更（CLI 引数は使用しない）
+
+### Removed
+- CLI 引数モード（`input.md [output.xlsx] [mergeCols] [fontName]`）による設定
+
+### Notes
+- 起動クラス名（FQCN）や import は新しいパッケージに合わせて更新してください
+- 本バージョンでは、実行時に引数を渡しても設定には使用されません（常にダイアログが表示されます）
+
+---
+
 ## [1.0.0] - 2025-12-24
 
 ### Added

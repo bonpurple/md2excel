@@ -1,4 +1,4 @@
-package md2excel;
+package md2excel.render;
 
 import java.util.Iterator;
 
@@ -6,7 +6,11 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 
-final class MarkdownRenderer {
+import md2excel.excel.Md2ExcelSheetUtil;
+import md2excel.markdown.ListStackUtil;
+import md2excel.markdown.MdTextUtil;
+
+public final class MarkdownRenderer {
 
     private enum LineKind {
         CODE_FENCE(MdBlockBoundary.Policy.CODE_FENCE),
@@ -102,10 +106,13 @@ final class MarkdownRenderer {
             }
 
             // 8) list
-            if (trimmed.startsWith("* ")) {
-                String content = trimmed.substring(2).trim();
-                String bulletMd = "・ " + content;
-                return new LineInfo(rawLine, trimmed, indent, LineKind.BULLET_ITEM, -1, null, null, bulletMd);
+            if (trimmed.length() >= 2) {
+                char m = trimmed.charAt(0);
+                if ((m == '*' || m == '-') && Character.isWhitespace(trimmed.charAt(1))) {
+                    String content = trimmed.substring(2).trim();
+                    String bulletMd = "・ " + content;
+                    return new LineInfo(rawLine, trimmed, indent, LineKind.BULLET_ITEM, -1, null, null, bulletMd);
+                }
             }
 
             if (MdTextUtil.isNumberedListLine(trimmed)) {
@@ -116,7 +123,7 @@ final class MarkdownRenderer {
         }
     }
 
-    static void render(Iterator<String> it, RenderContext ctx) {
+    public static void render(Iterator<String> it, RenderContext ctx) {
         RenderState st = ctx.st;
 
         while (it.hasNext()) {

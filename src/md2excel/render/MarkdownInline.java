@@ -1,4 +1,4 @@
-package md2excel;
+package md2excel.render;
 
 import java.awt.Color;
 import java.util.ArrayList;
@@ -15,6 +15,8 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFColor;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFRichTextString;
+
+import md2excel.markdown.MdTextUtil;
 
 public final class MarkdownInline {
 

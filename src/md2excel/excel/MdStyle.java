@@ -1,4 +1,4 @@
-package md2excel;
+package md2excel.excel;
 
 import java.awt.Color;
 
@@ -13,25 +13,25 @@ import org.apache.poi.xssf.usermodel.XSSFColor;
 import org.apache.poi.xssf.usermodel.extensions.XSSFCellBorder.BorderSide;
 
 public final class MdStyle {
-    final CellStyle heading1Style;
-    final CellStyle heading2Style;
-    final CellStyle heading3Style;
-    final CellStyle heading4Style;
-    final CellStyle normalStyle;
-    final CellStyle bulletStyle;
-    final CellStyle listStyle;
+    public final CellStyle heading1Style;
+    public final CellStyle heading2Style;
+    public final CellStyle heading3Style;
+    public final CellStyle heading4Style;
+    public final CellStyle normalStyle;
+    public final CellStyle bulletStyle;
+    public final CellStyle listStyle;
 
-    final CellStyle codeBlockStyle; // 背景＋フォント（枠線なし）
+    public final CellStyle codeBlockStyle; // 背景＋フォント（枠線なし）
 
-    final CellStyle horizontalRuleStyle;
+    public final CellStyle horizontalRuleStyle;
 
-    final CellStyle tableHeaderStyle;
-    final CellStyle tableBodyStyle;
-    final CellStyle tableBodyLastRowStyle;
+    public final CellStyle tableHeaderStyle;
+    public final CellStyle tableBodyStyle;
+    public final CellStyle tableBodyLastRowStyle;
 
     // 引用ブロックは 2 種類だけ（左端・それ以外）
-    final CellStyle blockQuoteLeftStyle;
-    final CellStyle blockQuoteBodyStyle;
+    public final CellStyle blockQuoteLeftStyle;
+    public final CellStyle blockQuoteBodyStyle;
 
     // コードブロック枠線スタイル（mask で取り出す）
     // mask bit: 1=TOP, 2=BOTTOM, 4=LEFT, 8=RIGHT
@@ -190,7 +190,7 @@ public final class MdStyle {
     }
 
     // mask bit: 1=TOP, 2=BOTTOM, 4=LEFT, 8=RIGHT
-    CellStyle codeBlockFrameStyle(int mask) {
+    public CellStyle codeBlockFrameStyle(int mask) {
         if (mask == 0)
             return codeBlockStyle;
         return codeBlockFrameStyles[mask];

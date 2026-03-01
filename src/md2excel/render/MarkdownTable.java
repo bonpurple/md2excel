@@ -1,8 +1,11 @@
-package md2excel;
+package md2excel.render;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Workbook;
+
+import md2excel.excel.MdStyle;
+import md2excel.markdown.MdTextUtil;
 
 public final class MarkdownTable {
 

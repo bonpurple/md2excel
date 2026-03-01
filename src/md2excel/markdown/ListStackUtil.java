@@ -1,4 +1,4 @@
-package md2excel;
+package md2excel.markdown;
 
 import java.util.List;
 

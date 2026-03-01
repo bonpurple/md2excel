@@ -32,11 +32,12 @@ Apache POI 等の jar は **Git に含めない**ため、各自で取得して 
 
 ---
 
-## Eclipse 設定手順
+## IDE 設定手順（例）
 
 1. プロジェクト直下に `lib/` フォルダを作成（または既存を使用）
 2. 上記 jar を `lib/` に配置
-3. Eclipse で `lib/` 内の jar を選択 → 右クリック → **Build Path** → **Add to Build Path**
+3. 使用している IDE / 実行環境の方法で、`lib/` 配下の jar をプロジェクトのクラスパス（Build Path / Dependencies 等）に追加してください
+   - 手順は IDE により異なるため、各 IDE のドキュメントを参照してください
 
 ---
 

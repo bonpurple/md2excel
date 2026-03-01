@@ -1,4 +1,4 @@
-package md2excel;
+package md2excel.config;
 
 import java.io.File;
 
@@ -40,18 +40,7 @@ public final class Md2ExcelConfig {
     }
 
     public static Md2ExcelConfig load(String[] args) {
-        if (args != null && args.length >= 1) {
-            String in = args[0];
-            String out = (args.length >= 2) ? args[1] : replaceExtension(args[0], ".xlsx");
-            int mergeCols = (args.length >= 3) ? parseIntOrDefault(args[2], DEFAULT_MERGE_COLS) : DEFAULT_MERGE_COLS;
-            String fontName = (args.length >= 4 && args[3] != null && !args[3].trim().isEmpty()) ? args[3].trim()
-                    : DEFAULT_FONT_NAME;
-
-            return new Md2ExcelConfig(in, out, mergeCols, fontName, DEFAULT_H1_FONT_SIZE, DEFAULT_H2_FONT_SIZE,
-                    DEFAULT_H3_FONT_SIZE, DEFAULT_NORMAL_FONT_SIZE, VerticalAlignment.CENTER);
-        }
-
-        // 引数なし → ダイアログ
+        // ダイアログで設定
         File mdFile = chooseMarkdownFile();
         if (mdFile == null) {
             return null;

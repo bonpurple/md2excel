@@ -1,4 +1,4 @@
-package md2excel;
+package md2excel.excel;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;

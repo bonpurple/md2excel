@@ -1,8 +1,10 @@
-package md2excel;
+package md2excel.render;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+
+import md2excel.excel.MdStyle;
 
 public final class BlockQuoteUtil {
     private BlockQuoteUtil() {
