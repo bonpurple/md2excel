@@ -1,5 +1,7 @@
 package md2excel.render;
 
+import java.util.List;
+
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -33,7 +35,6 @@ public final class MarkdownTable {
             int startCol) {
 
         String trimmed = line.trim();
-        // 先頭/末尾の '|' は任意
         String inner = trimmed;
         if (inner.startsWith("|")) {
             inner = inner.substring(1);
@@ -46,7 +47,7 @@ public final class MarkdownTable {
 
         int segStart = 0;
         int n = inner.length();
-        boolean inCode = false; // `...` 内は | を区切りにしない（安全側）
+        boolean inCode = false;
         for (int i = 0; i <= n; i++) {
             if (i < n && inner.charAt(i) == '`') {
                 inCode = !inCode;
@@ -55,32 +56,30 @@ public final class MarkdownTable {
             if (i == n || (inner.charAt(i) == '|' && !inCode && !isEscapedPipe(inner, i))) {
                 String colText = inner.substring(segStart, i).trim();
 
-                // \| を | として扱う（インラインコード内も）
                 colText = unescapePipeOutsideInlineCode(colText);
-
-                // <br> を空白へ（インラインコード内は触らない）
                 colText = MdTextUtil.replaceBrOutsideInlineCode(colText, " ");
                 colText = MdTextUtil.collapseSpaces(colText);
 
                 Cell cell = row.createCell(colIndex++);
 
+                MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(colText);
+                List<MarkdownInline.MdSegment> joined = MarkdownInline.joinLinesWithSingleSpace(sp);
+
                 if (isHeaderRow) {
-                    String joined = MarkdownInline.brToSingleSpace(colText); // ★必ず split を通る
                     if (!joined.isEmpty()) {
-                        MarkdownInline.setMarkdownRichTextCell(wb, cell, joined, styles.tableHeaderStyle);
+                        MarkdownInline.setResolvedSegmentsCell(wb, cell, joined, styles.tableHeaderStyle);
                     } else {
                         cell.setCellStyle(styles.tableHeaderStyle);
                     }
                 } else {
-                    String joined = MarkdownInline.brToSingleSpace(colText); // ★必ず split を通る
                     if (!joined.isEmpty()) {
-                        MarkdownInline.setMarkdownRichTextCell(wb, cell, joined, styles.tableBodyStyle);
+                        MarkdownInline.setResolvedSegmentsCell(wb, cell, joined, styles.tableBodyStyle);
                     } else {
                         cell.setCellStyle(styles.tableBodyStyle);
                     }
                 }
 
-                segStart = i + 1; // 次のセグメント開始
+                segStart = i + 1;
             }
         }
 

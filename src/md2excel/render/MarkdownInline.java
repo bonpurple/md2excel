@@ -23,12 +23,12 @@ public final class MarkdownInline {
     private MarkdownInline() {
     }
 
-    // Workbook 単位でフォントをキャッシュ（Font は Workbook に紐づくので）
-    private static final Map<Workbook, FontCache> FONT_CACHE = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<Workbook, FontCache> FONT_CACHE = Collections
+            .synchronizedMap(new WeakHashMap<Workbook, FontCache>());
 
     private static final class FontCache {
-        final Map<Short, MarkdownFonts> inlineFontsByBaseFontIndex = new HashMap<>();
-        final Map<Short, CodeBlockFonts> codeBlockFontsByStyleFontIndex = new HashMap<>();
+        final Map<Short, MarkdownFonts> inlineFontsByBaseFontIndex = new HashMap<Short, MarkdownFonts>();
+        final Map<Short, CodeBlockFonts> codeBlockFontsByStyleFontIndex = new HashMap<Short, CodeBlockFonts>();
     }
 
     private static FontCache cache(Workbook wb) {
@@ -50,16 +50,11 @@ public final class MarkdownInline {
         }
     }
 
-    // インラインMarkdown描画で使うフォントのセット
-    private static class MarkdownFonts {
+    private static final class MarkdownFonts {
         final Font baseFont;
         final Font boldFont;
         final Font italicFont;
         final Font boldItalicFont;
-        final Font strikeFont;
-        final Font strikeBoldFont;
-        final Font strikeItalicFont;
-        final Font strikeBoldItalicFont;
         final XSSFFont codeAscii;
         final XSSFFont codeCjk;
         final XSSFFont codeAsciiBold;
@@ -67,8 +62,7 @@ public final class MarkdownInline {
         boolean baseBold;
 
         MarkdownFonts(Font baseFont, Font boldFont, Font italicFont, Font boldItalicFont, XSSFFont codeAscii,
-                XSSFFont codeCjk, XSSFFont codeAsciiBold, XSSFFont codeCjkBold, Font strikeFont, Font strikeBoldFont,
-                Font strikeItalicFont, Font strikeBoldItalicFont) {
+                XSSFFont codeCjk, XSSFFont codeAsciiBold, XSSFFont codeCjkBold) {
             this.baseFont = baseFont;
             this.boldFont = boldFont;
             this.italicFont = italicFont;
@@ -77,52 +71,141 @@ public final class MarkdownInline {
             this.codeCjk = codeCjk;
             this.codeAsciiBold = codeAsciiBold;
             this.codeCjkBold = codeCjkBold;
-            this.strikeFont = strikeFont;
-            this.strikeBoldFont = strikeBoldFont;
-            this.strikeItalicFont = strikeItalicFont;
-            this.strikeBoldItalicFont = strikeBoldItalicFont;
         }
     }
 
-    private static class MdSegment {
+    // package-private: render パッケージ内から直接使う
+    static final class MdSegment {
         final String text;
         final boolean inBold;
         final boolean inItalic;
-        final boolean inStrike;
         final boolean inCode;
 
-        MdSegment(String text, boolean inBold, boolean inItalic, boolean inStrike, boolean inCode) {
+        MdSegment(String text, boolean inBold, boolean inItalic, boolean inCode) {
             this.text = text;
             this.inBold = inBold;
             this.inItalic = inItalic;
-            this.inStrike = inStrike;
             this.inCode = inCode;
         }
     }
 
-    // markdownText: **太字** や *斜体* や ~~打ち消し~~ や `code` を含む Markdown 文字列
-    // baseStyle : 箇条書き・番号付き・通常テキストなどのセルスタイル
-    public static void setMarkdownRichTextCell(Workbook workbook, Cell cell, String markdownText, CellStyle baseStyle) {
+    private enum InlineTokenType {
+        TEXT,
+        CODE,
+        DELIM
+    }
 
+    private enum DelimUseKind {
+        OPEN_EM,
+        CLOSE_EM,
+        OPEN_STRONG,
+        CLOSE_STRONG
+    }
+
+    private static final class DelimUse {
+        final int start;
+        final int len;
+        final DelimUseKind kind;
+
+        DelimUse(int start, int len, DelimUseKind kind) {
+            this.start = start;
+            this.len = len;
+            this.kind = kind;
+        }
+    }
+
+    private static final class InlineToken {
+        final InlineTokenType type;
+        final String text; // TEXT/CODEのみ
+        final char marker; // DELIMのみ
+        final int originalLen; // DELIMのみ
+        final boolean canOpen; // DELIMのみ
+        final boolean canClose; // DELIMのみ
+
+        int usedOpenChars;
+        int usedCloseChars;
+
+        final List<DelimUse> uses = new ArrayList<DelimUse>();
+
+        private InlineToken(InlineTokenType type, String text, char marker, int originalLen, boolean canOpen,
+                boolean canClose) {
+            this.type = type;
+            this.text = text;
+            this.marker = marker;
+            this.originalLen = originalLen;
+            this.canOpen = canOpen;
+            this.canClose = canClose;
+        }
+
+        static InlineToken text(String text) {
+            return new InlineToken(InlineTokenType.TEXT, text, '\0', 0, false, false);
+        }
+
+        static InlineToken code(String normalizedText) {
+            return new InlineToken(InlineTokenType.CODE, normalizedText, '\0', 0, false, false);
+        }
+
+        static InlineToken delim(char marker, int len, boolean canOpen, boolean canClose) {
+            return new InlineToken(InlineTokenType.DELIM, null, marker, len, canOpen, canClose);
+        }
+
+        boolean isEmphasisDelimiter(char ch) {
+            return type == InlineTokenType.DELIM && marker == ch;
+        }
+
+        int remainingChars() {
+            return originalLen - usedOpenChars - usedCloseChars;
+        }
+
+        int availableForOpen() {
+            return remainingChars();
+        }
+
+        int availableForClose() {
+            return remainingChars();
+        }
+
+        void consumeAsOpen(int len) {
+            int start = originalLen - usedOpenChars - len;
+            uses.add(new DelimUse(start, len, (len == 2) ? DelimUseKind.OPEN_STRONG : DelimUseKind.OPEN_EM));
+            usedOpenChars += len;
+        }
+
+        void consumeAsClose(int len) {
+            int start = usedCloseChars;
+            uses.add(new DelimUse(start, len, (len == 2) ? DelimUseKind.CLOSE_STRONG : DelimUseKind.CLOSE_EM));
+            usedCloseChars += len;
+        }
+
+        void sortUses() {
+            Collections.sort(uses, new java.util.Comparator<DelimUse>() {
+                @Override
+                public int compare(DelimUse a, DelimUse b) {
+                    return Integer.compare(a.start, b.start);
+                }
+            });
+        }
+    }
+
+    private static final class DelimiterRunInfo {
+        final boolean canOpen;
+        final boolean canClose;
+
+        DelimiterRunInfo(boolean canOpen, boolean canClose) {
+            this.canOpen = canOpen;
+            this.canClose = canClose;
+        }
+    }
+
+    // ** / * / _ / `code` のみ（~~ は CommonMark core 非対応なので文字列扱い）
+    public static void setMarkdownRichTextCell(Workbook workbook, Cell cell, String markdownText, CellStyle baseStyle) {
         if (markdownText == null) {
             markdownText = "";
         }
-
-        // フォントセット準備
-        MarkdownFonts fonts = prepareMarkdownFonts(workbook, baseStyle);
-        // Markdown → Segment
         List<MdSegment> segments = parseMarkdownToSegments(markdownText);
-
-        // 空の RichText に追記していく
-        XSSFRichTextString rich = new XSSFRichTextString("");
-        appendSegmentsToRichText(rich, 0, segments, fonts);
-
-        cell.setCellStyle(baseStyle);
-        cell.setCellValue(rich);
+        setResolvedSegmentsCell(workbook, cell, segments, baseStyle);
     }
 
-    // 既存セルの末尾に Markdown 文字列を追記する。
-    // withLeadingSpace == true の場合、追記前に半角スペースを 1 個挿入する。
     public static void appendMarkdownToCell(Workbook workbook, Cell cell, String markdownText, CellStyle baseStyle,
             boolean withLeadingSpace) {
 
@@ -130,141 +213,356 @@ public final class MarkdownInline {
             return;
         }
 
-        // フォントセット
+        List<MdSegment> segments = parseMarkdownToSegments(markdownText);
+        appendResolvedSegmentsToCell(workbook, cell, segments, baseStyle, withLeadingSpace);
+    }
+
+    // package-private: Renderer / Table / CellAppendUtil から使う
+    static void setResolvedSegmentsCell(Workbook workbook, Cell cell, List<MdSegment> segments, CellStyle baseStyle) {
+        if (segments == null) {
+            segments = Collections.<MdSegment>emptyList();
+        }
+
         MarkdownFonts fonts = prepareMarkdownFonts(workbook, baseStyle);
 
-        // Markdown → Segment
-        List<MdSegment> segments = parseMarkdownToSegments(markdownText);
+        XSSFRichTextString rich = new XSSFRichTextString("");
+        appendSegmentsToRichText(rich, 0, segments, fonts);
 
-        // 共有されているかもしれない RichTextString は直接いじらない
+        cell.setCellStyle(baseStyle);
+        cell.setCellValue(rich);
+    }
+
+    static void appendResolvedSegmentsToCell(Workbook workbook, Cell cell, List<MdSegment> segments,
+            CellStyle baseStyle, boolean withLeadingSpace) {
+
+        if (segments == null || segments.isEmpty()) {
+            return;
+        }
+
+        MarkdownFonts fonts = prepareMarkdownFonts(workbook, baseStyle);
+
         XSSFRichTextString original = (XSSFRichTextString) cell.getRichStringCellValue();
-
-        // 1) original の内容とフォーマットを完全コピーした新インスタンスを作る
         XSSFRichTextString rich = cloneRichTextString(original);
 
-        // 2) セルには、このクローンだけを持たせる
         cell.setCellValue(rich);
 
-        // 3) 以降の処理はこの rich に対してだけ行う
-        String existing = rich.getString();
-        int pos = existing.length();
+        int pos = rich.getString().length();
 
-        // 必要なら先頭に半角スペースを追加
         if (withLeadingSpace && pos > 0) {
             rich.append(" ");
             rich.applyFont(pos, pos + 1, fonts.baseFont);
             pos++;
         }
 
-        // Segment を末尾に追記してフォント適用
         appendSegmentsToRichText(rich, pos, segments, fonts);
 
         cell.setCellStyle(baseStyle);
         cell.setCellValue(rich);
     }
 
-    // Markdown文字列を Segment のリストに分解する共通処理
     private static List<MdSegment> parseMarkdownToSegments(String markdownText) {
-        List<MdSegment> segments = new ArrayList<>();
+        List<InlineToken> tokens = tokenizeAndResolveInline(markdownText);
+        return buildSegments(tokens);
+    }
+
+    private static List<InlineToken> tokenizeAndResolveInline(String markdownText) {
+        List<InlineToken> tokens = tokenizeInline(markdownText);
+        resolveEmphasis(tokens, '*');
+        resolveEmphasis(tokens, '_');
+        return tokens;
+    }
+
+    private static List<InlineToken> tokenizeInline(String markdownText) {
+        List<InlineToken> tokens = new ArrayList<InlineToken>();
         if (markdownText == null || markdownText.isEmpty()) {
-            return segments;
+            return tokens;
         }
 
-        StringBuilder current = new StringBuilder();
-        boolean inBold = false;
-        boolean inItalic = false;
-        boolean inStrike = false;
-        int len = markdownText.length();
+        StringBuilder textBuf = new StringBuilder();
 
-        for (int i = 0; i < len;) {
+        for (int i = 0; i < markdownText.length();) {
             char ch = markdownText.charAt(i);
 
-            // `code`（複数バッククォート含む）を先に処理
+            // `code`（複数バッククォート含む）
             if (ch == '`') {
                 int tickLen = countBackticks(markdownText, i);
                 int close = findClosingBackticks(markdownText, i + tickLen, tickLen);
                 if (close >= 0) {
-                    if (current.length() > 0) {
-                        segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
-                        current.setLength(0);
-                    }
+                    flushTextToken(tokens, textBuf);
+
                     String code = markdownText.substring(i + tickLen, close);
                     code = normalizeCodeSpanContent(code);
-                    segments.add(new MdSegment(code, inBold, inItalic, inStrike, true));
+
+                    tokens.add(InlineToken.code(code));
+
                     i = close + tickLen;
                     continue;
                 }
-                current.append(markdownText, i, i + tickLen);
+
+                textBuf.append(markdownText, i, i + tickLen);
                 i += tickLen;
                 continue;
             }
 
-            // ~~strike~~ の開始/終了（コード中では無視）
-            if (ch == '~' && i + 1 < len && markdownText.charAt(i + 1) == '~') {
-                if (!isRealStrikeMarker(markdownText, i, inStrike)) {
-                    current.append("~~");
-                    i += 2;
-                    continue;
-                }
-                if (current.length() > 0) {
-                    segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
-                    current.setLength(0);
-                }
-                inStrike = !inStrike;
-                i += 2;
-                continue;
-            }
-
-            // **bold** / __bold__ の開始/終了（コード中では無視）
-            if ((ch == '*' || ch == '_') && i + 1 < len && markdownText.charAt(i + 1) == ch) {
-
-                // 本物の太字マーカーかどうか判定
-                if (!isRealBoldMarker(markdownText, i, inBold, ch)) {
-                    // マーカー扱いしない → 「**」や「__」そのものをテキストとして追加
-                    current.append(ch).append(ch);
-                    i += 2;
-                    continue;
-                }
-
-                // ここから本物のマーカーとして扱う
-                if (current.length() > 0) {
-                    segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
-                    current.setLength(0);
-                }
-                inBold = !inBold;
-                i += 2;
-                continue;
-            }
-
-            // *italic* / _italic_ の開始/終了（コード中では無視）
+            // * / _ delimiter run
             if (ch == '*' || ch == '_') {
-                if (!isRealItalicMarker(markdownText, i, inItalic, ch)) {
-                    current.append(ch);
-                    i++;
-                    continue;
+                int runLen = countRun(markdownText, i, ch);
+                DelimiterRunInfo info = analyzeDelimiterRun(markdownText, i, runLen, ch);
+
+                if (info.canOpen || info.canClose) {
+                    flushTextToken(tokens, textBuf);
+                    tokens.add(InlineToken.delim(ch, runLen, info.canOpen, info.canClose));
+                } else {
+                    appendRepeated(textBuf, ch, runLen);
                 }
-                if (current.length() > 0) {
-                    segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
-                    current.setLength(0);
-                }
-                inItalic = !inItalic;
-                i++;
+
+                i += runLen;
                 continue;
             }
 
-            // 通常文字
-            current.append(ch);
+            // ~~ は CommonMark core では非対応なので、そのまま文字列として流す
+            textBuf.append(ch);
             i++;
         }
 
-        if (current.length() > 0) {
-            segments.add(new MdSegment(current.toString(), inBold, inItalic, inStrike, false));
-        }
-
-        return segments;
+        flushTextToken(tokens, textBuf);
+        return tokens;
     }
 
-    // Markdown描画に使うフォントセットを baseStyle から準備する
+    private static void flushTextToken(List<InlineToken> tokens, StringBuilder textBuf) {
+        if (textBuf.length() == 0) {
+            return;
+        }
+        tokens.add(InlineToken.text(textBuf.toString()));
+        textBuf.setLength(0);
+    }
+
+    private static int countRun(String text, int pos, char ch) {
+        int len = 0;
+        while (pos + len < text.length() && text.charAt(pos + len) == ch) {
+            len++;
+        }
+        return len;
+    }
+
+    private static DelimiterRunInfo analyzeDelimiterRun(String text, int pos, int runLen, char markerChar) {
+        char before = (pos > 0) ? text.charAt(pos - 1) : '\0';
+        char after = (pos + runLen < text.length()) ? text.charAt(pos + runLen) : '\0';
+
+        boolean beforeWhitespace = (pos == 0) || isUnicodeWhitespace(before);
+        boolean afterWhitespace = (pos + runLen >= text.length()) || isUnicodeWhitespace(after);
+
+        boolean beforePunctuation = (pos > 0) && isPunctuationChar(before);
+        boolean afterPunctuation = (pos + runLen < text.length()) && isPunctuationChar(after);
+
+        boolean leftFlanking = !afterWhitespace && (!afterPunctuation || beforeWhitespace || beforePunctuation);
+
+        boolean rightFlanking = !beforeWhitespace && (!beforePunctuation || afterWhitespace || afterPunctuation);
+
+        boolean canOpen;
+        boolean canClose;
+
+        if (markerChar == '*') {
+            canOpen = leftFlanking;
+            canClose = rightFlanking;
+        } else {
+            // '_'
+            canOpen = leftFlanking && (!rightFlanking || beforePunctuation);
+            canClose = rightFlanking && (!leftFlanking || afterPunctuation);
+        }
+
+        return new DelimiterRunInfo(canOpen, canClose);
+    }
+
+    private static boolean isUnicodeWhitespace(char ch) {
+        return Character.isWhitespace(ch) || Character.isSpaceChar(ch);
+    }
+
+    private static boolean isPunctuationChar(char ch) {
+        if (isAsciiPunctuation(ch)) {
+            return true;
+        }
+
+        int t = Character.getType(ch);
+        return t == Character.CONNECTOR_PUNCTUATION || t == Character.DASH_PUNCTUATION
+                || t == Character.START_PUNCTUATION || t == Character.END_PUNCTUATION
+                || t == Character.INITIAL_QUOTE_PUNCTUATION || t == Character.FINAL_QUOTE_PUNCTUATION
+                || t == Character.OTHER_PUNCTUATION;
+    }
+
+    private static boolean isAsciiPunctuation(char ch) {
+        if (ch > 0x7F) {
+            return false;
+        }
+        return (ch >= '!' && ch <= '/') || (ch >= ':' && ch <= '@') || (ch >= '[' && ch <= '`')
+                || (ch >= '{' && ch <= '~');
+    }
+
+    private static void resolveEmphasis(List<InlineToken> tokens, char marker) {
+        List<Integer> openerStack = new ArrayList<Integer>();
+
+        for (int i = 0; i < tokens.size(); i++) {
+            InlineToken closer = tokens.get(i);
+            if (!closer.isEmphasisDelimiter(marker)) {
+                continue;
+            }
+
+            if (closer.canClose) {
+                while (closer.availableForClose() > 0) {
+                    int openerStackPos = findMatchingEmphasisOpener(tokens, openerStack, closer, marker);
+                    if (openerStackPos < 0) {
+                        break;
+                    }
+
+                    InlineToken opener = tokens.get(openerStack.get(openerStackPos));
+                    int useLen = (opener.availableForOpen() >= 2 && closer.availableForClose() >= 2) ? 2 : 1;
+
+                    opener.consumeAsOpen(useLen);
+                    closer.consumeAsClose(useLen);
+
+                    if (opener.availableForOpen() == 0) {
+                        openerStack.remove(openerStackPos);
+                    }
+                }
+            }
+
+            if (closer.canOpen && closer.availableForOpen() > 0) {
+                openerStack.add(i);
+            }
+        }
+    }
+
+    private static int findMatchingEmphasisOpener(List<InlineToken> tokens, List<Integer> openerStack,
+            InlineToken closer, char marker) {
+
+        for (int i = openerStack.size() - 1; i >= 0; i--) {
+            InlineToken opener = tokens.get(openerStack.get(i));
+
+            if (!opener.isEmphasisDelimiter(marker) || opener.availableForOpen() <= 0) {
+                openerStack.remove(i);
+                continue;
+            }
+
+            if (violatesRuleOfThree(opener, closer)) {
+                continue;
+            }
+
+            return i;
+        }
+
+        return -1;
+    }
+
+    /**
+     * CommonMark の rule of 3: 片方でも「開けて閉じられる」delimiter run のとき、 opener/closer の元の
+     * run 長の合計が 3 の倍数で、 かつ両方とも 3 の倍数ではない場合はマッチ禁止。
+     */
+    private static boolean violatesRuleOfThree(InlineToken opener, InlineToken closer) {
+        boolean oneCanBoth = (opener.canOpen && opener.canClose) || (closer.canOpen && closer.canClose);
+        if (!oneCanBoth) {
+            return false;
+        }
+
+        int sum = opener.originalLen + closer.originalLen;
+        if ((sum % 3) != 0) {
+            return false;
+        }
+
+        boolean bothMultipleOf3 = (opener.originalLen % 3 == 0) && (closer.originalLen % 3 == 0);
+        return !bothMultipleOf3;
+    }
+
+    private static List<MdSegment> buildSegments(List<InlineToken> tokens) {
+        List<MdSegment> out = new ArrayList<MdSegment>();
+
+        int boldDepth = 0;
+        int italicDepth = 0;
+
+        for (InlineToken token : tokens) {
+            if (token.type == InlineTokenType.TEXT) {
+                addMergedSegment(out, token.text, boldDepth > 0, italicDepth > 0, false);
+                continue;
+            }
+
+            if (token.type == InlineTokenType.CODE) {
+                addMergedSegment(out, token.text, boldDepth > 0, italicDepth > 0, true);
+                continue;
+            }
+
+            token.sortUses();
+
+            int pos = 0;
+            for (DelimUse use : token.uses) {
+                if (use.start > pos) {
+                    addMergedSegment(out, repeatChar(token.marker, use.start - pos), boldDepth > 0, italicDepth > 0,
+                            false);
+                }
+
+                switch (use.kind) {
+                case CLOSE_EM:
+                    if (italicDepth > 0) {
+                        italicDepth--;
+                    }
+                    break;
+                case CLOSE_STRONG:
+                    if (boldDepth > 0) {
+                        boldDepth--;
+                    }
+                    break;
+                case OPEN_EM:
+                    italicDepth++;
+                    break;
+                case OPEN_STRONG:
+                    boldDepth++;
+                    break;
+                default:
+                    break;
+                }
+
+                pos = use.start + use.len;
+            }
+
+            if (pos < token.originalLen) {
+                addMergedSegment(out, repeatChar(token.marker, token.originalLen - pos), boldDepth > 0, italicDepth > 0,
+                        false);
+            }
+        }
+
+        return out;
+    }
+
+    private static void addMergedSegment(List<MdSegment> out, String text, boolean inBold, boolean inItalic,
+            boolean inCode) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+
+        if (!out.isEmpty()) {
+            MdSegment last = out.get(out.size() - 1);
+            if (last.inBold == inBold && last.inItalic == inItalic && last.inCode == inCode) {
+                out.set(out.size() - 1, new MdSegment(last.text + text, inBold, inItalic, inCode));
+                return;
+            }
+        }
+
+        out.add(new MdSegment(text, inBold, inItalic, inCode));
+    }
+
+    private static void appendRepeated(StringBuilder sb, char ch, int count) {
+        for (int i = 0; i < count; i++) {
+            sb.append(ch);
+        }
+    }
+
+    private static String repeatChar(char ch, int count) {
+        if (count <= 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(count);
+        appendRepeated(sb, ch, count);
+        return sb.toString();
+    }
+
     private static MarkdownFonts prepareMarkdownFonts(Workbook wb, CellStyle baseStyle) {
         short key = (short) baseStyle.getFontIndex();
 
@@ -274,7 +572,6 @@ public final class MarkdownInline {
             return cached;
         }
 
-        // ---- ここからは “1回だけ” 作る ----
         Font base = wb.getFontAt(baseStyle.getFontIndex());
         boolean baseBold = base.getBold();
 
@@ -294,31 +591,6 @@ public final class MarkdownInline {
         boldItalic.setBold(true);
         boldItalic.setItalic(true);
 
-        Font strike = wb.createFont();
-        strike.setFontName(base.getFontName());
-        strike.setFontHeightInPoints(base.getFontHeightInPoints());
-        strike.setStrikeout(true);
-
-        Font strikeBold = wb.createFont();
-        strikeBold.setFontName(base.getFontName());
-        strikeBold.setFontHeightInPoints(base.getFontHeightInPoints());
-        strikeBold.setBold(true);
-        strikeBold.setStrikeout(true);
-
-        Font strikeItalic = wb.createFont();
-        strikeItalic.setFontName(base.getFontName());
-        strikeItalic.setFontHeightInPoints(base.getFontHeightInPoints());
-        strikeItalic.setItalic(true);
-        strikeItalic.setStrikeout(true);
-
-        Font strikeBoldItalic = wb.createFont();
-        strikeBoldItalic.setFontName(base.getFontName());
-        strikeBoldItalic.setFontHeightInPoints(base.getFontHeightInPoints());
-        strikeBoldItalic.setBold(true);
-        strikeBoldItalic.setItalic(true);
-        strikeBoldItalic.setStrikeout(true);
-
-        // インラインコード（赤）
         XSSFColor inlineRed = new XSSFColor(new Color(180, 0, 0), null);
 
         XSSFFont codeAscii = (XSSFFont) wb.createFont();
@@ -344,18 +616,16 @@ public final class MarkdownInline {
         codeCjkBold.setColor(inlineRed);
 
         MarkdownFonts mf = new MarkdownFonts(base, bold, italic, boldItalic, codeAscii, codeCjk, codeAsciiBold,
-                codeCjkBold, strike, strikeBold, strikeItalic, strikeBoldItalic);
+                codeCjkBold);
         mf.baseBold = baseBold;
 
         c.inlineFontsByBaseFontIndex.put(key, mf);
         return mf;
     }
 
-    // segments の内容を rich の末尾に追記し、フォントを適用する。
-    // startPos は追記開始位置（通常は rich.getString().length()）。
-    // 戻り値は追記後の文字列長（次の startPos として使える）。
     private static int appendSegmentsToRichText(XSSFRichTextString rich, int startPos, List<MdSegment> segments,
             MarkdownFonts fonts) {
+
         int pos = startPos;
         if (segments == null || segments.isEmpty()) {
             return pos;
@@ -372,9 +642,6 @@ public final class MarkdownInline {
             int segEnd = segStart + text.length();
 
             if (seg.inCode) {
-                // 「このコード部分を太字で出したいか？」
-                // 1) seg.inBold == true … Markdown で **`code`** のように明示的に太字指定
-                // 2) baseBold == true … 見出しセルなど、ベーススタイル自体が太字
                 boolean wantBoldCode = seg.inBold || fonts.baseBold;
 
                 int i = 0;
@@ -385,6 +652,7 @@ public final class MarkdownInline {
                     while (i < text.length() && MdTextUtil.isAsciiLike(text.charAt(i)) == ascii) {
                         i++;
                     }
+
                     int runLen = i - runStart;
                     int start = segStart + runStart;
                     int end = start + runLen;
@@ -394,16 +662,6 @@ public final class MarkdownInline {
                     } else {
                         rich.applyFont(start, end, wantBoldCode ? fonts.codeCjkBold : fonts.codeCjk);
                     }
-                }
-            } else if (seg.inStrike) {
-                if (seg.inBold && seg.inItalic) {
-                    rich.applyFont(segStart, segEnd, fonts.strikeBoldItalicFont);
-                } else if (seg.inBold) {
-                    rich.applyFont(segStart, segEnd, fonts.strikeBoldFont);
-                } else if (seg.inItalic) {
-                    rich.applyFont(segStart, segEnd, fonts.strikeItalicFont);
-                } else {
-                    rich.applyFont(segStart, segEnd, fonts.strikeFont);
                 }
             } else if (seg.inBold && seg.inItalic) {
                 rich.applyFont(segStart, segEnd, fonts.boldItalicFont);
@@ -421,94 +679,6 @@ public final class MarkdownInline {
         return pos;
     }
 
-    // "**" / "__" が「本物の太字マーカー」かどうかを判定する。
-    // text.charAt(pos) == markerChar かつ text.charAt(pos+1) == markerChar 前提。
-    private static boolean isRealBoldMarker(String text, int pos, boolean inBold, char markerChar) {
-        int len = text.length();
-
-        char prev = (pos > 0) ? text.charAt(pos - 1) : '\0';
-        char next = (pos + 2 < len) ? text.charAt(pos + 2) : '\0';
-
-        if (!inBold) {
-            // 「開き側」の判定（太字外で見つかった "**"）
-            // 1) TE**, CE**, TW** など：
-            // 直前が英大文字 かつ 直後が英数ではない（句読点・スペース・行末）なら
-            // VS Code 同様「マーカーではなくリテラル」とみなす。
-            if (pos > 0 && Character.isUpperCase(prev) && (pos + 2 >= len || !Character.isLetterOrDigit(next))) {
-                return false;
-            }
-
-            // 2) 行末ギリギリ（"テキスト**" で後ろに何もない）は開きにしても閉じられないのでマーカー扱いしない
-            if (pos + 2 >= len) {
-                return false;
-            }
-
-            // "_" が単語中ならマーカー扱いしない
-            if (markerChar == '_' && pos > 0 && pos + 2 < len && Character.isLetterOrDigit(prev)
-                    && Character.isLetterOrDigit(next)) {
-                return false;
-            }
-
-            // それ以外は素直に「開きマーカー」とみなす
-            return true;
-        } else {
-            // 「閉じ側」の判定（太字中で見つかった "**"）
-            // 基本的に全部「本物の閉じマーカー」として扱う。
-            // （TE** のようなケースではそもそも inBold が true になっていないので、ここには来ない）
-            return true;
-        }
-    }
-
-    // "*" / "_" が「本物の斜体マーカー」かどうかを判定する。
-    // text.charAt(pos) == markerChar 前提。
-    private static boolean isRealItalicMarker(String text, int pos, boolean inItalic, char markerChar) {
-        int len = text.length();
-        char prev = (pos > 0) ? text.charAt(pos - 1) : '\0';
-        char next = (pos + 1 < len) ? text.charAt(pos + 1) : '\0';
-
-        if (!inItalic) {
-            if (pos + 1 >= len) {
-                return false;
-            }
-            if (Character.isWhitespace(next)) {
-                return false;
-            }
-            if (markerChar == '_' && pos > 0 && Character.isLetterOrDigit(prev) && Character.isLetterOrDigit(next)) {
-                return false;
-            }
-            return true;
-        } else {
-            if (Character.isWhitespace(prev)) {
-                return false;
-            }
-            return true;
-        }
-    }
-
-    // "~~" が「本物の打ち消しマーカー」かどうかを判定する。
-    // text.charAt(pos) == '~' かつ text.charAt(pos+1) == '~' 前提。
-    private static boolean isRealStrikeMarker(String text, int pos, boolean inStrike) {
-        int len = text.length();
-        char prev = (pos > 0) ? text.charAt(pos - 1) : '\0';
-        char next = (pos + 2 < len) ? text.charAt(pos + 2) : '\0';
-
-        if (!inStrike) {
-            if (pos + 2 >= len) {
-                return false;
-            }
-            if (Character.isWhitespace(next)) {
-                return false;
-            }
-            return true;
-        } else {
-            if (Character.isWhitespace(prev)) {
-                return false;
-            }
-            return true;
-        }
-    }
-
-    // src のテキストとフォーマット情報を丸ごとコピーした XSSFRichTextString を作る
     private static XSSFRichTextString cloneRichTextString(XSSFRichTextString src) {
         if (src == null) {
             return new XSSFRichTextString("");
@@ -533,6 +703,7 @@ public final class MarkdownInline {
 
     public static void setCodeBlockRichTextCell(Workbook workbook, Cell cell, String codeText,
             CellStyle codeBlockStyle) {
+
         FontCache c = cache(workbook);
 
         short key = (short) codeBlockStyle.getFontIndex();
@@ -574,179 +745,126 @@ public final class MarkdownInline {
         cell.setCellValue(rich);
     }
 
-    // =========================
-    // ctx版オーバーロード
-    // =========================
     public static void setMarkdownRichTextCell(RenderContext ctx, Cell cell, String markdownText, CellStyle baseStyle) {
         setMarkdownRichTextCell(ctx.wb, cell, markdownText, baseStyle);
     }
 
     static final class BrSplitResult {
-        final List<String> lines; // その場で出力できる行（空は基本入れない）
-        final boolean endsWithBr; // 末尾が <br> で終わっている（次入力行へ継続）
-        final String carryPrefix; // 末尾 <br> 後に継続するとき先頭に付ける接頭辞（強調継続など）
+        final List<List<MdSegment>> lines; // markdown文字列ではなく resolved segment 行
+        final boolean endsWithBr;
+        final String carryPrefix; // 互換維持。segment直分割版では常に ""
 
-        BrSplitResult(List<String> lines, boolean endsWithBr, String carryPrefix) {
+        BrSplitResult(List<List<MdSegment>> lines, boolean endsWithBr, String carryPrefix) {
             this.lines = lines;
             this.endsWithBr = endsWithBr;
             this.carryPrefix = carryPrefix;
         }
     }
 
-    static BrSplitResult splitByBrPreserveFormatting(String markdownText) {
-        List<String> out = new ArrayList<>();
-        if (markdownText == null)
-            markdownText = "";
-
-        StringBuilder cur = new StringBuilder();
-        boolean inBold = false;
-        boolean inItalic = false;
-        boolean inStrike = false;
-        String boldMarker = "";
-        String italicMarker = "";
-        String strikeMarker = "";
-
-        // 次行の先頭に付く「強調継続用プレフィックス」
-        String reopenPrefix = "";
-
+    private static final class BrSplitAccumulator {
+        final List<List<MdSegment>> lines = new ArrayList<List<MdSegment>>();
+        final List<MdSegment> current = new ArrayList<MdSegment>();
         boolean lastWasBr = false;
+    }
 
-        for (int i = 0; i < markdownText.length();) {
-            char ch = markdownText.charAt(i);
+    static BrSplitResult splitByBrPreserveFormatting(String markdownText) {
+        if (markdownText == null) {
+            markdownText = "";
+        }
+        List<MdSegment> segments = parseMarkdownToSegments(markdownText);
+        return splitResolvedSegmentsByBr(segments);
+    }
 
-            // `code`（複数バッククォート含む）
-            if (ch == '`') {
-                int tickLen = countBackticks(markdownText, i);
-                int close = findClosingBackticks(markdownText, i + tickLen, tickLen);
-                if (close >= 0) {
-                    cur.append(markdownText, i, close + tickLen);
-                    i = close + tickLen;
-                    lastWasBr = false;
-                    continue;
-                }
-            }
+    private static BrSplitResult splitResolvedSegmentsByBr(List<MdSegment> segments) {
+        BrSplitAccumulator acc = new BrSplitAccumulator();
 
-            // ~~ の扱い
-            if (ch == '~' && i + 1 < markdownText.length() && markdownText.charAt(i + 1) == '~') {
-                if (!isRealStrikeMarker(markdownText, i, inStrike)) {
-                    cur.append("~~");
-                    i += 2;
-                    continue;
-                }
-                cur.append("~~");
-                if (!inStrike) {
-                    strikeMarker = "~~";
-                } else {
-                    strikeMarker = "";
-                }
-                inStrike = !inStrike;
-                i += 2;
-                lastWasBr = false;
-                continue;
-            }
+        for (MdSegment seg : segments) {
+            appendSegmentWithBrSplit(seg, acc);
+        }
 
-            // ** / __ の扱い
-            if ((ch == '*' || ch == '_') && i + 1 < markdownText.length() && markdownText.charAt(i + 1) == ch) {
-                if (!isRealBoldMarker(markdownText, i, inBold, ch)) {
-                    cur.append(ch).append(ch);
-                    i += 2;
-                    continue;
-                }
-                cur.append(ch).append(ch);
-                if (!inBold) {
-                    boldMarker = "" + ch + ch;
-                } else {
-                    boldMarker = "";
-                }
-                inBold = !inBold;
-                i += 2;
-                lastWasBr = false;
-                continue;
-            }
+        if (!acc.current.isEmpty()) {
+            acc.lines.add(new ArrayList<MdSegment>(acc.current));
+            acc.current.clear();
+        }
 
-            // * / _ の扱い
-            if (ch == '*' || ch == '_') {
-                if (!isRealItalicMarker(markdownText, i, inItalic, ch)) {
-                    cur.append(ch);
-                    i++;
-                    continue;
-                }
-                cur.append(ch);
-                if (!inItalic) {
-                    italicMarker = "" + ch;
-                } else {
-                    italicMarker = "";
-                }
-                inItalic = !inItalic;
-                i++;
-                lastWasBr = false;
-                continue;
-            }
+        // carryPrefix は互換維持のため残すが、segment 直分割では markdown 再構築しないので常に空
+        return new BrSplitResult(acc.lines, acc.lastWasBr, "");
+    }
 
-            int brLen = MdTextUtil.matchBrTagLen(markdownText, i);
+    private static void appendSegmentWithBrSplit(MdSegment seg, BrSplitAccumulator acc) {
+        if (seg == null || seg.text == null || seg.text.isEmpty()) {
+            return;
+        }
+
+        // インラインコード中の <br> は分割しない
+        if (seg.inCode) {
+            addMergedSegment(acc.current, seg.text, seg.inBold, seg.inItalic, true);
+            acc.lastWasBr = false;
+            return;
+        }
+
+        String text = seg.text;
+        int start = 0;
+
+        for (int i = 0; i < text.length();) {
+            int brLen = MdTextUtil.matchBrTagLen(text, i);
             if (brLen > 0) {
-                // 行を確定（太字が開いていたら閉じる）
-                String line = cur.toString();
-                if (inItalic)
-                    line = line + (italicMarker.isEmpty() ? "*" : italicMarker);
-                if (inStrike)
-                    line = line + (strikeMarker.isEmpty() ? "~~" : strikeMarker);
-                if (inBold)
-                    line = line + (boldMarker.isEmpty() ? "**" : boldMarker);
-
-                String trimmed = line.trim();
-                if (!trimmed.isEmpty())
-                    out.add(trimmed);
-
-                // 次行の builder を用意（強調継続なら reopen）
-                cur.setLength(0);
-                StringBuilder reopen = new StringBuilder();
-                if (inBold)
-                    reopen.append(boldMarker.isEmpty() ? "**" : boldMarker);
-                if (inItalic)
-                    reopen.append(italicMarker.isEmpty() ? "*" : italicMarker);
-                if (inStrike)
-                    reopen.append(strikeMarker.isEmpty() ? "~~" : strikeMarker);
-                reopenPrefix = reopen.toString();
-                if (!reopenPrefix.isEmpty())
-                    cur.append(reopenPrefix);
-
+                if (i > start) {
+                    addMergedSegment(acc.current, text.substring(start, i), seg.inBold, seg.inItalic, false);
+                }
+                finishCurrentLineAtBr(acc);
                 i += brLen;
-                lastWasBr = true;
+                start = i;
                 continue;
             }
-
-            // 通常文字
-            cur.append(ch);
             i++;
-            lastWasBr = false;
         }
 
-        // 末尾処理：最後の行
-        String line = cur.toString();
-        if (inItalic)
-            line = line + (italicMarker.isEmpty() ? "*" : italicMarker);
-        if (inStrike)
-            line = line + (strikeMarker.isEmpty() ? "~~" : strikeMarker);
-        if (inBold)
-            line = line + (boldMarker.isEmpty() ? "**" : boldMarker);
-        String trimmed = line.trim();
-        if (!trimmed.isEmpty())
-            out.add(trimmed);
+        if (start < text.length()) {
+            addMergedSegment(acc.current, text.substring(start), seg.inBold, seg.inItalic, false);
+            acc.lastWasBr = false;
+        }
+    }
 
-        boolean endsWithBr = lastWasBr;
-        String carryPrefix = endsWithBr ? reopenPrefix : "";
+    private static void finishCurrentLineAtBr(BrSplitAccumulator acc) {
+        if (!acc.current.isEmpty()) {
+            acc.lines.add(new ArrayList<MdSegment>(acc.current));
+            acc.current.clear();
+        }
+        acc.lastWasBr = true;
+    }
 
-        // 末尾が <br> の場合、上で reopenPrefix だけ入った空行が out に入る可能性があるので除去
-        if (endsWithBr && !out.isEmpty()) {
-            String last = out.get(out.size() - 1);
-            if (last.equals("**") || last.equals("__") || last.equals("*") || last.equals("_") || last.equals("~~")
-                    || last.equals("`") || last.isEmpty()) {
-                out.remove(out.size() - 1);
+    static List<MdSegment> joinLinesWithSingleSpace(BrSplitResult sp) {
+        List<MdSegment> out = new ArrayList<MdSegment>();
+        if (sp == null || sp.lines.isEmpty()) {
+            return out;
+        }
+
+        for (int i = 0; i < sp.lines.size(); i++) {
+            if (i > 0) {
+                addMergedSegment(out, " ", false, false, false);
+            }
+
+            List<MdSegment> line = sp.lines.get(i);
+            for (int j = 0; j < line.size(); j++) {
+                MdSegment seg = line.get(j);
+                addMergedSegment(out, seg.text, seg.inBold, seg.inItalic, seg.inCode);
             }
         }
 
-        return new BrSplitResult(out, endsWithBr, carryPrefix);
+        return out;
+    }
+
+    private static String segmentsToPlainText(List<MdSegment> segments) {
+        if (segments == null || segments.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < segments.size(); i++) {
+            sb.append(segments.get(i).text);
+        }
+        return sb.toString();
     }
 
     public static boolean hasBrOutsideInlineCode(String markdownText) {
@@ -754,17 +872,11 @@ public final class MarkdownInline {
         return sp.endsWithBr || sp.lines.size() >= 2;
     }
 
-    /**
-     * <br>
-     * を「半角スペース」にして連結する。 ※インラインコード中の <br>
-     * は split されない（そのまま残る） ※太字継続などは split の出力に従う（結果的に見た目は維持される）
-     */
+    // 互換用。書式は落ちるので、新規コードでは joinLinesWithSingleSpace + setResolvedSegmentsCell
+    // を使うこと。
     public static String brToSingleSpace(String markdownText) {
         BrSplitResult sp = splitByBrPreserveFormatting(markdownText);
-        if (sp.lines.isEmpty())
-            return "";
-        // lines は trim 済み想定なので " " join で要求どおりになる
-        return String.join(" ", sp.lines);
+        return segmentsToPlainText(joinLinesWithSingleSpace(sp));
     }
 
     private static int countBackticks(String text, int pos) {

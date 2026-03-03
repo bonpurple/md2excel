@@ -1,6 +1,8 @@
 package md2excel.render;
 
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -180,7 +182,6 @@ public final class MarkdownRenderer {
                 handleNormalText(li, ctx);
                 break;
             default:
-                // 新しい LineKind を増やしたのに switch を直してない事故を早期に検出
                 throw new AssertionError("Unhandled LineKind: " + li.kind);
             }
         }
@@ -191,7 +192,6 @@ public final class MarkdownRenderer {
         BlockQuoteUtil.closeBlockQuoteIfOpen(ctx.sheet, ctx.styles, st);
     }
 
-    // -------------------- handler: ``` / ~~~ --------------------
     private static void handleCodeFence(LineInfo li, RenderContext ctx) {
 
         if (!ctx.st.inCodeBlock) {
@@ -241,7 +241,6 @@ public final class MarkdownRenderer {
         ctx.st.codeBlockBaseIndent = -1;
     }
 
-    // -------------------- handler: コードブロック中 --------------------
     private static void handleInCodeBlock(LineInfo li, RenderContext ctx) {
 
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.CODE_LINE,
@@ -260,12 +259,10 @@ public final class MarkdownRenderer {
         ctx.st.afterWriteCodeLine(codeCol);
     }
 
-    // -------------------- handler: 空行 --------------------
     private static void handleBlankLine(LineInfo li, RenderContext ctx) {
         ctx.st.onMarkdownBlankLine(ctx.sheet, ctx.styles.normalStyle);
     }
 
-    // -------------------- handler: 水平線（---） --------------------
     private static void handleHorizontalRule(LineInfo li, RenderContext ctx) {
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx, RowUtil.ReuseKind.HORIZONTAL_RULE,
                 ctx.styles.normalStyle);
@@ -273,21 +270,17 @@ public final class MarkdownRenderer {
         ctx.st.afterWriteHorizontalRule();
     }
 
-    // -------------------- handler: 引用（>） --------------------
     private static void handleBlockQuote(LineInfo li, RenderContext ctx) {
         ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.normalStyle);
 
-        // 必ず split API を通す（ここが差分ポイント）
         String quoteText = applyHardLineBreak(li.quoteText, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(quoteText);
         boolean hasBr = sp.endsWithBr || sp.lines.size() >= 2;
 
-        // 既存の「連続引用→同一セル追記」は <br> がないときだけ
         if (!hasBr && ctx.st.inBlockQuote && ctx.st.blockQuoteCellRow >= 0 && ctx.st.blockQuoteCellCol >= 0
                 && ctx.st.lastRowType == RenderState.RowType.OTHER && !ctx.st.lastBlankFromMarkdown) {
 
-            // split した結果（1行）を使っても良いが、差分最小でそのまま
-            CellAppendUtil.appendMarkdownWithSpace(ctx, ctx.st.blockQuoteCellRow, ctx.st.blockQuoteCellCol, quoteText,
+            appendBrSplitLineWithSpace(ctx, ctx.st.blockQuoteCellRow, ctx.st.blockQuoteCellCol, sp, 0,
                     ctx.styles.normalStyle);
 
             ctx.st.afterAppendBlockQuoteLine();
@@ -296,24 +289,19 @@ public final class MarkdownRenderer {
 
         int col = calcBlockStartCol(li.indent, ctx.st);
 
-        // <br> 分割して同じ列に縦展開（sp をそのまま使う）
-        // 1行目
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.BLOCK_QUOTE,
                 ctx.styles.normalStyle);
         Cell cell = row.createCell(col);
-        MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, sp.lines.isEmpty() ? "" : sp.lines.get(0),
-                ctx.styles.normalStyle);
+        setBrSplitLineCell(ctx, cell, sp, 0, ctx.styles.normalStyle);
         ctx.st.afterWriteBlockQuoteLine(row.getRowNum(), col);
 
-        // 2行目以降（同列）
         for (int i = 1; i < sp.lines.size(); i++) {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell c2 = r2.createCell(col);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, c2, sp.lines.get(i), ctx.styles.normalStyle);
+            setBrSplitLineCell(ctx, c2, sp, i, ctx.styles.normalStyle);
             ctx.st.afterWriteBlockQuoteLine(r2.getRowNum(), col);
         }
 
-        // 行末 <br> は次入力行へ継続（次行が > でも通常行でも吸う）
         ctx.st.pendingQuoteBr = sp.endsWithBr;
         ctx.st.pendingQuoteBrCol = col;
         ctx.st.pendingQuoteBrCarry = sp.carryPrefix;
@@ -323,7 +311,6 @@ public final class MarkdownRenderer {
         if (!ctx.st.pendingQuoteBr)
             return false;
 
-        // BLOCK_QUOTE または NORMAL を継続として扱う
         if (li.kind != LineKind.BLOCK_QUOTE && li.kind != LineKind.NORMAL) {
             ctx.st.pendingQuoteBr = false;
             ctx.st.pendingQuoteBrCarry = "";
@@ -336,10 +323,10 @@ public final class MarkdownRenderer {
 
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
-        for (String line : sp.lines) {
+        for (int i = 0; i < sp.lines.size(); i++) {
             Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell cell = row.createCell(ctx.st.pendingQuoteBrCol);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, line, ctx.styles.normalStyle);
+            setBrSplitLineCell(ctx, cell, sp, i, ctx.styles.normalStyle);
             ctx.st.afterWriteBlockQuoteLine(row.getRowNum(), ctx.st.pendingQuoteBrCol);
         }
 
@@ -348,13 +335,10 @@ public final class MarkdownRenderer {
         return true;
     }
 
-    // -------------------- handler: テーブル区切り（|---|---|） --------------------
     private static void handleTableSeparatorLine(LineInfo li, RenderContext ctx) {
-
         ctx.st.afterSkipTableSeparatorLine();
     }
 
-    // -------------------- handler: テーブル行（| a | b |） --------------------
     private static void handleTableRow(LineInfo li, RenderContext ctx) {
 
         int tableStartCol;
@@ -388,7 +372,6 @@ public final class MarkdownRenderer {
         ctx.st.afterWriteTableRow(tableStartCol);
     }
 
-    // -------------------- handler: 見出し --------------------
     private static void handleHeading(LineInfo li, RenderContext ctx) {
         ctx.st.ensureAutoBlankBeforeHeadingIfNeeded(ctx.sheet, ctx.styles.normalStyle);
 
@@ -396,25 +379,21 @@ public final class MarkdownRenderer {
                 : (li.headingLevel == 2) ? ctx.styles.heading2Style
                         : (li.headingLevel == 3) ? ctx.styles.heading3Style : ctx.styles.heading4Style;
 
-        // 必ず split API を通す
         String headingText = applyHardLineBreak(li.headingText, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(headingText);
 
-        // 1行目
         Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
         Cell cell = row.createCell(0);
-        MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, sp.lines.isEmpty() ? "" : sp.lines.get(0), style);
+        setBrSplitLineCell(ctx, cell, sp, 0, style);
         ctx.st.afterWriteHeading();
 
-        // 2行目以降（同じ見出しスタイルで A列に縦展開）
         for (int i = 1; i < sp.lines.size(); i++) {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell c2 = r2.createCell(0);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, c2, sp.lines.get(i), style);
+            setBrSplitLineCell(ctx, c2, sp, i, style);
             ctx.st.afterWriteHeading();
         }
 
-        // 行末が <br> なら次入力行へ継続（太字継続も carry で保持）
         ctx.st.pendingHeadingBr = sp.endsWithBr;
         ctx.st.pendingHeadingLevel = li.headingLevel;
         ctx.st.pendingHeadingCarry = sp.carryPrefix;
@@ -424,7 +403,7 @@ public final class MarkdownRenderer {
         if (!ctx.st.pendingHeadingBr)
             return false;
         if (li.kind != LineKind.NORMAL)
-            return false; // 例の通り、次行が普通行のときだけ継続
+            return false;
 
         CellStyle style = (ctx.st.pendingHeadingLevel == 1) ? ctx.styles.heading1Style
                 : (ctx.st.pendingHeadingLevel == 2) ? ctx.styles.heading2Style
@@ -433,10 +412,10 @@ public final class MarkdownRenderer {
         String text = ctx.st.pendingHeadingCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
-        for (String line : sp.lines) {
+        for (int i = 0; i < sp.lines.size(); i++) {
             Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell cell = row.createCell(0);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, line, style);
+            setBrSplitLineCell(ctx, cell, sp, i, style);
             ctx.st.afterWriteHeading();
         }
 
@@ -445,7 +424,6 @@ public final class MarkdownRenderer {
         return true;
     }
 
-    // -------------------- handler: 箇条書き --------------------
     private static void handleBullet(LineInfo li, RenderContext ctx) {
         int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.indent, false);
         int col = clampCol(1 + depth, ctx.st);
@@ -453,43 +431,36 @@ public final class MarkdownRenderer {
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.BULLET_ITEM,
                 ctx.styles.normalStyle);
 
-        // 必ず split API を通す（太字は維持）
         String bulletText = applyHardLineBreak(li.bulletMarkdownText, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(bulletText);
 
-        // 1行目：B列
         Cell cell = row.createCell(col);
-        String first = sp.lines.isEmpty() ? "" : sp.lines.get(0);
-        MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, first, ctx.styles.bulletStyle);
+        setBrSplitLineCell(ctx, cell, sp, 0, ctx.styles.bulletStyle);
         ctx.st.afterWriteBulletItem(row.getRowNum(), col);
 
-        // 2行目以降：次行 & 1つ右（C列以降）
         int contCol = clampCol(col + 1, ctx.st);
         int lastRowNum = row.getRowNum();
         for (int i = 1; i < sp.lines.size(); i++) {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell c2 = r2.createCell(contCol);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, c2, sp.lines.get(i), ctx.styles.bulletStyle);
+            setBrSplitLineCell(ctx, c2, sp, i, ctx.styles.bulletStyle);
             lastRowNum = r2.getRowNum();
             ctx.st.afterWriteNormalText(lastRowNum, contCol, 0, false);
         }
 
-        // 継続状態をセット（行末 <br> や、2行目以降があるなら「以後 NORMAL を右セルに追記」）
         boolean needCont = sp.endsWithBr || sp.lines.size() >= 2;
         if (needCont) {
             ctx.st.pendingListBr = true;
             ctx.st.pendingListBrCol = contCol;
-            ctx.st.pendingListBrRow = (sp.lines.size() >= 2) ? lastRowNum : -1; // まだセル未作成なら -1
+            ctx.st.pendingListBrRow = (sp.lines.size() >= 2) ? lastRowNum : -1;
             ctx.st.pendingListBrHasCell = (sp.lines.size() >= 2);
             ctx.st.pendingListBrStyle = ctx.styles.bulletStyle;
             ctx.st.pendingListBrCarry = sp.carryPrefix;
 
-            // 既存の「説明行追記」ロジックを止める（ここ重要）
             ctx.st.bulletDetailActive = false;
         }
     }
 
-    // -------------------- handler: 番号付き --------------------
     private static void handleNumberedList(LineInfo li, RenderContext ctx) {
         int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.indent, true);
         int col = clampCol(1 + depth, ctx.st);
@@ -497,13 +468,11 @@ public final class MarkdownRenderer {
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.NUMBER_ITEM,
                 ctx.styles.normalStyle);
 
-        // 必ず split API を通す
         String numberedText = applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(numberedText);
 
         Cell cell = row.createCell(col);
-        String first = sp.lines.isEmpty() ? "" : sp.lines.get(0);
-        MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, first, ctx.styles.listStyle);
+        setBrSplitLineCell(ctx, cell, sp, 0, ctx.styles.listStyle);
         ctx.st.afterWriteNumberedItem(li.indent, col);
 
         int contCol = clampCol(col + 1, ctx.st);
@@ -511,7 +480,7 @@ public final class MarkdownRenderer {
         for (int i = 1; i < sp.lines.size(); i++) {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell c2 = r2.createCell(contCol);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, c2, sp.lines.get(i), ctx.styles.listStyle);
+            setBrSplitLineCell(ctx, c2, sp, i, ctx.styles.listStyle);
             lastRowNum = r2.getRowNum();
             ctx.st.afterWriteNormalText(lastRowNum, contCol, 0, false);
         }
@@ -525,7 +494,6 @@ public final class MarkdownRenderer {
             ctx.st.pendingListBrStyle = ctx.styles.listStyle;
             ctx.st.pendingListBrCarry = sp.carryPrefix;
 
-            // 既存の番号付き「説明行」追記を止める
             ctx.st.inNestedNumberBlock = false;
         }
     }
@@ -534,7 +502,6 @@ public final class MarkdownRenderer {
         if (!ctx.st.pendingListBr)
             return false;
 
-        // NORMAL 以外が来たら継続終了（例：次に見出し/別リスト/空行など）
         if (li.kind != LineKind.NORMAL) {
             ctx.st.pendingListBr = false;
             ctx.st.pendingListBrHasCell = false;
@@ -546,47 +513,38 @@ public final class MarkdownRenderer {
         String text = ctx.st.pendingListBrCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
-        // まだセルが無い（* test1<br> の直後など）なら、ここで「次行」を作って右セルに書く
         if (!ctx.st.pendingListBrHasCell) {
             Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell cell = row.createCell(ctx.st.pendingListBrCol);
-            String first = sp.lines.isEmpty() ? "" : sp.lines.get(0);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, first, ctx.st.pendingListBrStyle);
+            setBrSplitLineCell(ctx, cell, sp, 0, ctx.st.pendingListBrStyle);
 
             ctx.st.pendingListBrRow = row.getRowNum();
             ctx.st.pendingListBrHasCell = true;
 
-            // 2行目以降（<br> がこの行にもあった場合）は同列に縦展開
             for (int i = 1; i < sp.lines.size(); i++) {
                 Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
                 Cell c2 = r2.createCell(ctx.st.pendingListBrCol);
-                MarkdownInline.setMarkdownRichTextCell(ctx.wb, c2, sp.lines.get(i), ctx.st.pendingListBrStyle);
+                setBrSplitLineCell(ctx, c2, sp, i, ctx.st.pendingListBrStyle);
                 ctx.st.pendingListBrRow = r2.getRowNum();
             }
         } else {
-            // 既存セルに追記（半角スペース付き）
-            if (!sp.lines.isEmpty()) {
-                CellAppendUtil.appendMarkdownWithSpace(ctx, ctx.st.pendingListBrRow, ctx.st.pendingListBrCol,
-                        sp.lines.get(0), ctx.st.pendingListBrStyle);
-            }
-            // 2行目以降は新規行（同列）
+            appendBrSplitLineWithSpace(ctx, ctx.st.pendingListBrRow, ctx.st.pendingListBrCol, sp, 0,
+                    ctx.st.pendingListBrStyle);
+
             for (int i = 1; i < sp.lines.size(); i++) {
                 Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
                 Cell c2 = r2.createCell(ctx.st.pendingListBrCol);
-                MarkdownInline.setMarkdownRichTextCell(ctx.wb, c2, sp.lines.get(i), ctx.st.pendingListBrStyle);
+                setBrSplitLineCell(ctx, c2, sp, i, ctx.st.pendingListBrStyle);
                 ctx.st.pendingListBrRow = r2.getRowNum();
             }
         }
 
         ctx.st.pendingListBrCarry = sp.carryPrefix;
-        // 継続は「空行か他ブロックが来るまで」続ける（例3に合う）
         return true;
     }
 
-    // -------------------- handler: 通常テキスト --------------------
     private static void handleNormalText(LineInfo li, RenderContext ctx) {
 
-        // ---- 0) 直前の「行末 <br>」継続を最優先で消費（同じ列に次行出力） ----
         if (ctx.st.pendingSameColBr) {
             consumePendingSameColBr(li, ctx);
             return;
@@ -594,8 +552,6 @@ public final class MarkdownRenderer {
 
         String text = applyHardLineBreak(li.trimmed, li);
 
-        // ---- 1) 引用セルへの追記（ただし <br> が無い場合だけ） ----
-        // <br> があると「次行セルへ展開」が必要になるため、ここでは追記しない
         if (!MarkdownInline.hasBrOutsideInlineCode(text) && tryAppendToOpenBlockQuote(text, ctx)) {
             return;
         }
@@ -604,13 +560,10 @@ public final class MarkdownRenderer {
 
         int indent = li.indent;
 
-        // ---- 2) 既存セルへの追記（箇条書き説明 / 番号付き説明 / 同インデント連結） ----
-        // ここで true を返した場合、tryAppendToPrevCells 側で <br> 対応している想定
         if (tryAppendToPrevCells(ctx, text, indent)) {
             return;
         }
 
-        // ---- 3) 新規セルに通常出力（<br> は縦展開） ----
         NormalTextFlags f = buildNormalTextFlags(indent, ctx.st);
         int col = calcNormalTextCol(indent, ctx.st, f);
 
@@ -618,26 +571,19 @@ public final class MarkdownRenderer {
         Row row = reuseBlank ? RowUtil.reuseLastMarkdownBlankRow(ctx.sheet, ctx.st, ctx.styles.normalStyle)
                 : RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
 
-        // <br> を分割（インラインコード中は分割しない / 太字は維持）
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
-        // 1行目
         Cell cell = row.createCell(col);
-        String first = sp.lines.isEmpty() ? "" : sp.lines.get(0);
-        MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, first, ctx.styles.normalStyle);
+        setBrSplitLineCell(ctx, cell, sp, 0, ctx.styles.normalStyle);
         ctx.st.afterWriteNormalText(row.getRowNum(), col, indent, f.isListNote);
 
-        // 2行目以降：同じ列に新規行で縦展開
         for (int i = 1; i < sp.lines.size(); i++) {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell c2 = r2.createCell(col);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, c2, sp.lines.get(i), ctx.styles.normalStyle);
-
-            // ここは「追加行」なので isListNote は false（inListBlock を二重に落とさない）
+            setBrSplitLineCell(ctx, c2, sp, i, ctx.styles.normalStyle);
             ctx.st.afterWriteNormalText(r2.getRowNum(), col, indent, false);
         }
 
-        // 行末が <br> なら次入力行を「同じ列の次行」に継続
         if (sp.endsWithBr) {
             ctx.st.pendingSameColBr = true;
             ctx.st.pendingSameColBrCol = col;
@@ -646,12 +592,6 @@ public final class MarkdownRenderer {
         }
     }
 
-    /**
-     * 直前行が「...<br>
-     * 」で終わっていた場合、次の入力行（NORMAL）を 同じ列の次行に出力する（さらに <br>
-     * があれば縦展開し、行末 <br>
-     * なら継続する）
-     */
     private static void consumePendingSameColBr(LineInfo li, RenderContext ctx) {
         int col = ctx.st.pendingSameColBrCol;
         CellStyle style = ctx.st.pendingSameColBrStyle;
@@ -659,17 +599,13 @@ public final class MarkdownRenderer {
         String text = ctx.st.pendingSameColBrCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
-        // 継続なので必ず「新しい行」に出す
-        for (String line : sp.lines) {
+        for (int i = 0; i < sp.lines.size(); i++) {
             Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell cell = row.createCell(col);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, line, style);
-
-            // indent は 0 扱いでOK（列は固定で出しているため）
+            setBrSplitLineCell(ctx, cell, sp, i, style);
             ctx.st.afterWriteNormalText(row.getRowNum(), col, 0, false);
         }
 
-        // 継続更新
         ctx.st.pendingSameColBr = sp.endsWithBr;
         ctx.st.pendingSameColBrCarry = sp.carryPrefix;
 
@@ -692,10 +628,10 @@ public final class MarkdownRenderer {
         String text = ctx.st.pendingSameColBrCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
-        for (String line : sp.lines) {
+        for (int i = 0; i < sp.lines.size(); i++) {
             Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell cell = row.createCell(ctx.st.pendingSameColBrCol);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, cell, line, ctx.st.pendingSameColBrStyle);
+            setBrSplitLineCell(ctx, cell, sp, i, ctx.st.pendingSameColBrStyle);
             ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingSameColBrCol, 0, false);
         }
 
@@ -710,8 +646,9 @@ public final class MarkdownRenderer {
         if (ctx.st.lastRowType != RenderState.RowType.OTHER || ctx.st.lastBlankFromMarkdown)
             return false;
 
-        CellAppendUtil.appendMarkdownWithSpace(ctx.sheet, ctx.wb, ctx.styles, ctx.st.blockQuoteCellRow,
-                ctx.st.blockQuoteCellCol, trimmed, ctx.styles.normalStyle);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(trimmed);
+        appendBrSplitLineWithSpace(ctx, ctx.st.blockQuoteCellRow, ctx.st.blockQuoteCellCol, sp, 0,
+                ctx.styles.normalStyle);
 
         ctx.st.afterAppendToOpenBlockQuoteFromNormalText(ctx.st.blockQuoteCellRow, ctx.st.blockQuoteCellCol);
         return true;
@@ -719,14 +656,12 @@ public final class MarkdownRenderer {
 
     private static boolean tryAppendToPrevCells(RenderContext ctx, String trimmed, int indent) {
 
-        // 1) 箇条書き説明行（直前 bullet セルに追記）
         if (ctx.st.bulletDetailActive && indent > 0 && ctx.st.bulletDetailRow == ctx.st.rowIndex - 1) {
             appendToExistingCellWithBr(ctx, ctx.st.bulletDetailRow, ctx.st.bulletDetailCol, trimmed,
                     ctx.styles.bulletStyle, indent);
             return true;
         }
 
-        // 2) 番号付き説明行（直前 numbered セルに追記）
         boolean isNumberDetail = ctx.st.rowIndex > 0 && ctx.st.inNestedNumberBlock
                 && ctx.st.lastContentType == RenderState.ContentType.NUMBER && indent > ctx.st.nestedNumberIndent
                 && ctx.st.lastRowType == RenderState.RowType.OTHER && !ctx.st.lastBlankFromMarkdown;
@@ -737,7 +672,6 @@ public final class MarkdownRenderer {
             return true;
         }
 
-        // 3) 同インデント連結（直前 normal セルに追記）
         boolean isSameIndentConcat = ctx.st.lastContentType == RenderState.ContentType.NORMAL
                 && ctx.st.lastNormalRowIndex >= 0 && ctx.st.lastNormalIndent == indent
                 && ctx.st.lastRowType == RenderState.RowType.OTHER && !ctx.st.lastBlankFromMarkdown
@@ -756,34 +690,27 @@ public final class MarkdownRenderer {
     private static void appendToExistingCellWithBr(RenderContext ctx, int targetRow, int targetCol, String markdown,
             CellStyle style, int indent) {
 
-        // 必ず split API を通す
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(markdown);
 
-        // 1行目：既存セルへ追記（従来通り）
+        appendBrSplitLineWithSpace(ctx, targetRow, targetCol, sp, 0, style);
         if (!sp.lines.isEmpty()) {
-            CellAppendUtil.appendMarkdownWithSpace(ctx, targetRow, targetCol, sp.lines.get(0), style);
             ctx.st.afterAppendNormalToExistingCell(targetRow, targetCol, indent);
         }
 
-        // 2行目以降：次行（同列）に新規出力
         for (int i = 1; i < sp.lines.size(); i++) {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell c2 = r2.createCell(targetCol);
-            MarkdownInline.setMarkdownRichTextCell(ctx.wb, c2, sp.lines.get(i), style);
-
-            // ここだけ：indent を保持（0固定にしない）
+            setBrSplitLineCell(ctx, c2, sp, i, style);
             ctx.st.afterWriteNormalText(r2.getRowNum(), targetCol, indent, false);
         }
 
-        // 末尾 <br> は次入力行へ継続（同列に縦展開）
         if (sp.endsWithBr) {
             ctx.st.pendingSameColBr = true;
             ctx.st.pendingSameColBrCol = targetCol;
             ctx.st.pendingSameColBrStyle = style;
             ctx.st.pendingSameColBrCarry = sp.carryPrefix;
 
-            // <br> を跨いだあとに「同インデント連結」が暴発しないよう安全側で連結を切るなら：
-            ctx.st.resetOnBlockBoundary(); // list context は消えない（RenderState実装のままなら）
+            ctx.st.resetOnBlockBoundary();
         }
     }
 
@@ -817,7 +744,7 @@ public final class MarkdownRenderer {
         }
         if (f.isListChildParagraph) {
             int parentDepth = ListStackUtil.getParentListDepthForChildParagraph(st.listStack);
-            int col = 2 + Math.max(0, parentDepth); // C列起点
+            int col = 2 + Math.max(0, parentDepth);
             return clampCol(col, st);
         }
 
@@ -857,13 +784,9 @@ public final class MarkdownRenderer {
         return out + "<br>";
     }
 
-    /**
-     * コードブロック/引用/テーブル等の「ブロック開始列」を決める。 - インデント0は A列(0) 起点 - インデントありは従来どおり B列(1)
-     * 起点で深さに応じて右へ
-     */
     private static int calcBlockStartCol(int indent, RenderState st) {
         if (indent <= 0) {
-            return 0; // トップレベルは A列
+            return 0;
         }
 
         int col;
@@ -877,6 +800,26 @@ public final class MarkdownRenderer {
             col = 1 + level;
         }
         return clampCol(col, st);
+    }
+
+    private static void setBrSplitLineCell(RenderContext ctx, Cell cell, MarkdownInline.BrSplitResult sp, int lineIndex,
+            CellStyle style) {
+
+        List<MarkdownInline.MdSegment> line = (sp.lines.isEmpty() || lineIndex < 0 || lineIndex >= sp.lines.size())
+                ? Collections.<MarkdownInline.MdSegment>emptyList()
+                : sp.lines.get(lineIndex);
+
+        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, line, style);
+    }
+
+    private static void appendBrSplitLineWithSpace(RenderContext ctx, int rowNum, int colNum,
+            MarkdownInline.BrSplitResult sp, int lineIndex, CellStyle style) {
+
+        if (sp.lines.isEmpty() || lineIndex < 0 || lineIndex >= sp.lines.size()) {
+            return;
+        }
+
+        CellAppendUtil.appendResolvedSegmentsWithSpace(ctx, rowNum, colNum, sp.lines.get(lineIndex), style);
     }
 
     private static final class NormalTextFlags {
