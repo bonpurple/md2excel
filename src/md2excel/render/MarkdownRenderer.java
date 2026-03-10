@@ -513,30 +513,18 @@ public final class MarkdownRenderer {
         String text = ctx.st.pendingListBrCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
-        if (!ctx.st.pendingListBrHasCell) {
-            Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
-            Cell cell = row.createCell(ctx.st.pendingListBrCol);
-            setBrSplitLineCell(ctx, cell, sp, 0, ctx.st.pendingListBrStyle);
+        Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+        Cell cell = row.createCell(ctx.st.pendingListBrCol);
+        setBrSplitLineCell(ctx, cell, sp, 0, ctx.st.pendingListBrStyle);
 
-            ctx.st.pendingListBrRow = row.getRowNum();
-            ctx.st.pendingListBrHasCell = true;
+        ctx.st.pendingListBrRow = row.getRowNum();
+        ctx.st.pendingListBrHasCell = true;
 
-            for (int i = 1; i < sp.lines.size(); i++) {
-                Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
-                Cell c2 = r2.createCell(ctx.st.pendingListBrCol);
-                setBrSplitLineCell(ctx, c2, sp, i, ctx.st.pendingListBrStyle);
-                ctx.st.pendingListBrRow = r2.getRowNum();
-            }
-        } else {
-            appendBrSplitLineWithSpace(ctx, ctx.st.pendingListBrRow, ctx.st.pendingListBrCol, sp, 0,
-                    ctx.st.pendingListBrStyle);
-
-            for (int i = 1; i < sp.lines.size(); i++) {
-                Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
-                Cell c2 = r2.createCell(ctx.st.pendingListBrCol);
-                setBrSplitLineCell(ctx, c2, sp, i, ctx.st.pendingListBrStyle);
-                ctx.st.pendingListBrRow = r2.getRowNum();
-            }
+        for (int i = 1; i < sp.lines.size(); i++) {
+            Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+            Cell c2 = r2.createCell(ctx.st.pendingListBrCol);
+            setBrSplitLineCell(ctx, c2, sp, i, ctx.st.pendingListBrStyle);
+            ctx.st.pendingListBrRow = r2.getRowNum();
         }
 
         ctx.st.pendingListBrCarry = sp.carryPrefix;
