@@ -261,6 +261,30 @@ public final class MarkdownInline {
     }
 
     private static List<MdSegment> parseMarkdownToSegments(String markdownText) {
+        return parseMarkdown(markdownText).segments;
+    }
+
+    private static final class ParseResult {
+        final List<MdSegment> segments;
+        final String carryPrefix;
+
+        ParseResult(List<MdSegment> segments, String carryPrefix) {
+            this.segments = segments;
+            this.carryPrefix = carryPrefix;
+        }
+    }
+
+    private static final class EmphasisState {
+        int boldDepth;
+        int italicDepth;
+
+        EmphasisState(int boldDepth, int italicDepth) {
+            this.boldDepth = boldDepth;
+            this.italicDepth = italicDepth;
+        }
+    }
+
+    private static ParseResult parseMarkdown(String markdownText) {
         List<InlineToken> tokens = tokenizeAndResolveInline(markdownText);
         return buildSegments(tokens);
     }
@@ -472,20 +496,20 @@ public final class MarkdownInline {
         return !bothMultipleOf3;
     }
 
-    private static List<MdSegment> buildSegments(List<InlineToken> tokens) {
+    private static ParseResult buildSegments(List<InlineToken> tokens) {
         List<MdSegment> out = new ArrayList<MdSegment>();
+        StringBuilder carry = new StringBuilder();
 
-        int boldDepth = 0;
-        int italicDepth = 0;
+        EmphasisState state = new EmphasisState(0, 0);
 
         for (InlineToken token : tokens) {
             if (token.type == InlineTokenType.TEXT) {
-                addMergedSegment(out, token.text, boldDepth > 0, italicDepth > 0, false);
+                addMergedSegment(out, token.text, state.boldDepth > 0, state.italicDepth > 0, false);
                 continue;
             }
 
             if (token.type == InlineTokenType.CODE) {
-                addMergedSegment(out, token.text, boldDepth > 0, italicDepth > 0, true);
+                addMergedSegment(out, token.text, state.boldDepth > 0, state.italicDepth > 0, true);
                 continue;
             }
 
@@ -494,26 +518,25 @@ public final class MarkdownInline {
             int pos = 0;
             for (DelimUse use : token.uses) {
                 if (use.start > pos) {
-                    addMergedSegment(out, repeatChar(token.marker, use.start - pos), boldDepth > 0, italicDepth > 0,
-                            false);
+                    consumeUnmatchedDelimiterRun(out, token, use.start - pos, state, carry);
                 }
 
                 switch (use.kind) {
                 case CLOSE_EM:
-                    if (italicDepth > 0) {
-                        italicDepth--;
+                    if (state.italicDepth > 0) {
+                        state.italicDepth--;
                     }
                     break;
                 case CLOSE_STRONG:
-                    if (boldDepth > 0) {
-                        boldDepth--;
+                    if (state.boldDepth > 0) {
+                        state.boldDepth--;
                     }
                     break;
                 case OPEN_EM:
-                    italicDepth++;
+                    state.italicDepth++;
                     break;
                 case OPEN_STRONG:
-                    boldDepth++;
+                    state.boldDepth++;
                     break;
                 default:
                     break;
@@ -523,12 +546,49 @@ public final class MarkdownInline {
             }
 
             if (pos < token.originalLen) {
-                addMergedSegment(out, repeatChar(token.marker, token.originalLen - pos), boldDepth > 0, italicDepth > 0,
-                        false);
+                consumeUnmatchedDelimiterRun(out, token, token.originalLen - pos, state, carry);
             }
         }
 
-        return out;
+        return new ParseResult(out, carry.toString());
+    }
+
+    private static void consumeUnmatchedDelimiterRun(List<MdSegment> out, InlineToken token, int len,
+            EmphasisState state, StringBuilder carry) {
+        if (len <= 0) {
+            return;
+        }
+
+        int remaining = len;
+
+        if (token.canClose) {
+            while (remaining >= 2 && state.boldDepth > 0) {
+                state.boldDepth--;
+                remaining -= 2;
+            }
+            while (remaining >= 1 && state.italicDepth > 0) {
+                state.italicDepth--;
+                remaining--;
+            }
+        }
+
+        if (token.canOpen) {
+            while (remaining >= 2) {
+                state.boldDepth++;
+                carry.append(token.marker).append(token.marker);
+                remaining -= 2;
+            }
+            while (remaining >= 1) {
+                state.italicDepth++;
+                carry.append(token.marker);
+                remaining--;
+            }
+        }
+
+        if (remaining > 0) {
+            addMergedSegment(out, repeatChar(token.marker, remaining), state.boldDepth > 0, state.italicDepth > 0,
+                    false);
+        }
     }
 
     private static void addMergedSegment(List<MdSegment> out, String text, boolean inBold, boolean inItalic,
@@ -752,7 +812,7 @@ public final class MarkdownInline {
     static final class BrSplitResult {
         final List<List<MdSegment>> lines; // markdown文字列ではなく resolved segment 行
         final boolean endsWithBr;
-        final String carryPrefix; // 互換維持。segment直分割版では常に ""
+        final String carryPrefix; // 行継続時に次行先頭へ補う未閉じ強調記号
 
         BrSplitResult(List<List<MdSegment>> lines, boolean endsWithBr, String carryPrefix) {
             this.lines = lines;
@@ -771,11 +831,11 @@ public final class MarkdownInline {
         if (markdownText == null) {
             markdownText = "";
         }
-        List<MdSegment> segments = parseMarkdownToSegments(markdownText);
-        return splitResolvedSegmentsByBr(segments);
+        ParseResult parsed = parseMarkdown(markdownText);
+        return splitResolvedSegmentsByBr(parsed.segments, parsed.carryPrefix);
     }
 
-    private static BrSplitResult splitResolvedSegmentsByBr(List<MdSegment> segments) {
+    private static BrSplitResult splitResolvedSegmentsByBr(List<MdSegment> segments, String carryPrefix) {
         BrSplitAccumulator acc = new BrSplitAccumulator();
 
         for (MdSegment seg : segments) {
@@ -787,8 +847,7 @@ public final class MarkdownInline {
             acc.current.clear();
         }
 
-        // carryPrefix は互換維持のため残すが、segment 直分割では markdown 再構築しないので常に空
-        return new BrSplitResult(acc.lines, acc.lastWasBr, "");
+        return new BrSplitResult(acc.lines, acc.lastWasBr, carryPrefix);
     }
 
     private static void appendSegmentWithBrSplit(MdSegment seg, BrSplitAccumulator acc) {
