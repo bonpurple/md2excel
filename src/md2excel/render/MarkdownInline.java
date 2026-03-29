@@ -261,7 +261,7 @@ public final class MarkdownInline {
     }
 
     private static List<MdSegment> parseMarkdownToSegments(String markdownText) {
-        return parseMarkdown(markdownText).segments;
+        return parseMarkdown(markdownText, false).segments;
     }
 
     private static final class ParseResult {
@@ -284,9 +284,9 @@ public final class MarkdownInline {
         }
     }
 
-    private static ParseResult parseMarkdown(String markdownText) {
+    private static ParseResult parseMarkdown(String markdownText, boolean allowDanglingOpenCarry) {
         List<InlineToken> tokens = tokenizeAndResolveInline(markdownText);
-        return buildSegments(tokens);
+        return buildSegments(tokens, allowDanglingOpenCarry);
     }
 
     private static List<InlineToken> tokenizeAndResolveInline(String markdownText) {
@@ -496,7 +496,7 @@ public final class MarkdownInline {
         return !bothMultipleOf3;
     }
 
-    private static ParseResult buildSegments(List<InlineToken> tokens) {
+    private static ParseResult buildSegments(List<InlineToken> tokens, boolean allowDanglingOpenCarry) {
         List<MdSegment> out = new ArrayList<MdSegment>();
         StringBuilder carry = new StringBuilder();
 
@@ -518,7 +518,7 @@ public final class MarkdownInline {
             int pos = 0;
             for (DelimUse use : token.uses) {
                 if (use.start > pos) {
-                    consumeUnmatchedDelimiterRun(out, token, use.start - pos, state, carry);
+                    consumeUnmatchedDelimiterRun(out, token, use.start - pos, state, carry, allowDanglingOpenCarry);
                 }
 
                 switch (use.kind) {
@@ -546,7 +546,7 @@ public final class MarkdownInline {
             }
 
             if (pos < token.originalLen) {
-                consumeUnmatchedDelimiterRun(out, token, token.originalLen - pos, state, carry);
+                consumeUnmatchedDelimiterRun(out, token, token.originalLen - pos, state, carry, allowDanglingOpenCarry);
             }
         }
 
@@ -554,13 +554,15 @@ public final class MarkdownInline {
     }
 
     private static void consumeUnmatchedDelimiterRun(List<MdSegment> out, InlineToken token, int len,
-            EmphasisState state, StringBuilder carry) {
+            EmphasisState state, StringBuilder carry, boolean allowDanglingOpenCarry) {
+
         if (len <= 0) {
             return;
         }
 
         int remaining = len;
 
+        // まず既存の open 状態を閉じられる分だけ閉じる
         if (token.canClose) {
             while (remaining >= 2 && state.boldDepth > 0) {
                 state.boldDepth--;
@@ -572,7 +574,8 @@ public final class MarkdownInline {
             }
         }
 
-        if (token.canOpen) {
+        // opener としての carry は「行末 <br> で継続させたい時だけ」許可する
+        if (token.canOpen && allowDanglingOpenCarry) {
             while (remaining >= 2) {
                 state.boldDepth++;
                 carry.append(token.marker).append(token.marker);
@@ -585,6 +588,7 @@ public final class MarkdownInline {
             }
         }
 
+        // 通常時の未解決 delimiter は文字として残す
         if (remaining > 0) {
             addMergedSegment(out, repeatChar(token.marker, remaining), state.boldDepth > 0, state.italicDepth > 0,
                     false);
@@ -831,8 +835,50 @@ public final class MarkdownInline {
         if (markdownText == null) {
             markdownText = "";
         }
-        ParseResult parsed = parseMarkdown(markdownText);
+
+        boolean endsWithBr = endsWithBrOutsideInlineCode(markdownText);
+        ParseResult parsed = parseMarkdown(markdownText, endsWithBr);
         return splitResolvedSegmentsByBr(parsed.segments, parsed.carryPrefix);
+    }
+
+    private static boolean endsWithBrOutsideInlineCode(String s) {
+        if (s == null || s.isEmpty()) {
+            return false;
+        }
+
+        int end = s.length();
+        while (end > 0 && Character.isWhitespace(s.charAt(end - 1))) {
+            end--;
+        }
+        if (end == 0) {
+            return false;
+        }
+
+        boolean inCode = false;
+        int lastBrEnd = -1;
+
+        for (int i = 0; i < end;) {
+            char ch = s.charAt(i);
+
+            if (ch == '`') {
+                inCode = !inCode;
+                i++;
+                continue;
+            }
+
+            if (!inCode) {
+                int brLen = MdTextUtil.matchBrTagLen(s, i);
+                if (brLen > 0) {
+                    lastBrEnd = i + brLen;
+                    i += brLen;
+                    continue;
+                }
+            }
+
+            i++;
+        }
+
+        return lastBrEnd == end;
     }
 
     private static BrSplitResult splitResolvedSegmentsByBr(List<MdSegment> segments, String carryPrefix) {
