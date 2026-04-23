@@ -67,14 +67,18 @@ public final class MarkdownRenderer {
             String trimmed = rawLine.trim();
             int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
 
-            // 1) code fence は inCodeBlock 中でも最優先（閉じるため）
-            if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
-                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, null, null);
+            // 1) コードブロック中は「正しい閉じフェンス」だけ CODE_FENCE。
+            //    それ以外は全部本文扱い。
+            if (st.inCodeBlock) {
+                if (MdTextUtil.isClosingCodeFenceLine(trimmed, st.codeFenceMarker, st.codeFenceLength)) {
+                    return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, null, null);
+                }
+                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_LINE, -1, null, null, null);
             }
 
-            // 2) code block 中は「全部 code line」
-            if (st.inCodeBlock) {
-                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_LINE, -1, null, null, null);
+            // 2) コードブロック外では開始フェンスを判定
+            if (MdTextUtil.isOpeningCodeFenceLine(trimmed)) {
+                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, null, null);
             }
 
             // 3) blank
@@ -194,12 +198,26 @@ public final class MarkdownRenderer {
 
     private static void handleCodeFence(LineInfo li, RenderContext ctx) {
 
+        // 開始
         if (!ctx.st.inCodeBlock) {
             ctx.st.ensureAutoBlankIfPrevBlockQuote(ctx.sheet, ctx.styles.normalStyle);
             ctx.st.currentCodeBlockIndent = li.indent;
+
+            ctx.st.codeFenceMarker = MdTextUtil.getCodeFenceMarker(li.trimmed);
+            ctx.st.codeFenceLength = MdTextUtil.getCodeFenceLength(li.trimmed);
+
+            ctx.st.inCodeBlock = true;
+            ctx.st.lastLineWasTable = false;
+
+            ctx.st.codeBlockFirstRow = -1;
+            ctx.st.codeBlockLastRow = -1;
+            ctx.st.codeBlockCol = 0;
+            ctx.st.codeBlockBaseIndent = -1;
+            return;
         }
 
-        if (ctx.st.inCodeBlock && ctx.st.codeBlockFirstRow >= 0 && ctx.st.codeBlockLastRow >= 0) {
+        // 終了
+        if (ctx.st.codeBlockFirstRow >= 0 && ctx.st.codeBlockLastRow >= 0) {
             int fillEndCol = Math.max(ctx.st.codeBlockCol, ctx.st.lastColIndex);
 
             for (int r = ctx.st.codeBlockFirstRow; r <= ctx.st.codeBlockLastRow; r++) {
@@ -232,8 +250,11 @@ public final class MarkdownRenderer {
             }
         }
 
-        ctx.st.inCodeBlock = !ctx.st.inCodeBlock;
+        ctx.st.inCodeBlock = false;
         ctx.st.lastLineWasTable = false;
+
+        ctx.st.codeFenceMarker = '\0';
+        ctx.st.codeFenceLength = 0;
 
         ctx.st.codeBlockFirstRow = -1;
         ctx.st.codeBlockLastRow = -1;

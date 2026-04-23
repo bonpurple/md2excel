@@ -63,6 +63,10 @@ final class RenderState {
     int codeBlockLastRow = -1;
     int codeBlockCol = 0;
     int currentCodeBlockIndent = 0;
+    
+    // 開始コードフェンス情報
+    char codeFenceMarker = '\0';
+    int codeFenceLength = 0;
 
     // テーブル範囲
     int currentTableStartCol = 0;

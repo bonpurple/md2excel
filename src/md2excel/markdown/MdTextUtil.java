@@ -275,4 +275,64 @@ public final class MdTextUtil {
             ed--;
         return out.substring(st, ed);
     }
+    
+    public static boolean isOpeningCodeFenceLine(String trimmedLine) {
+        return getCodeFenceLength(trimmedLine) >= 3;
+    }
+
+    public static char getCodeFenceMarker(String trimmedLine) {
+        if (trimmedLine == null || trimmedLine.isEmpty()) {
+            return '\0';
+        }
+        char ch = trimmedLine.charAt(0);
+        return (ch == '`' || ch == '~') ? ch : '\0';
+    }
+
+    public static int getCodeFenceLength(String trimmedLine) {
+        char marker = getCodeFenceMarker(trimmedLine);
+        if (marker == '\0') {
+            return 0;
+        }
+
+        int len = 0;
+        while (len < trimmedLine.length() && trimmedLine.charAt(len) == marker) {
+            len++;
+        }
+        return (len >= 3) ? len : 0;
+    }
+
+    // 閉じフェンス:
+    // - 開始時と同じ記号
+    // - 開始時以上の長さ
+    // - フェンス後ろは空白のみ
+    public static boolean isClosingCodeFenceLine(String trimmedLine, char openingMarker, int openingLen) {
+        if (trimmedLine == null || trimmedLine.isEmpty()) {
+            return false;
+        }
+        if (openingMarker != '`' && openingMarker != '~') {
+            return false;
+        }
+        if (openingLen < 3) {
+            return false;
+        }
+        if (trimmedLine.charAt(0) != openingMarker) {
+            return false;
+        }
+
+        int len = 0;
+        while (len < trimmedLine.length() && trimmedLine.charAt(len) == openingMarker) {
+            len++;
+        }
+
+        if (len < openingLen) {
+            return false;
+        }
+
+        for (int i = len; i < trimmedLine.length(); i++) {
+            if (!Character.isWhitespace(trimmedLine.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
 }
