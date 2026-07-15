@@ -26,9 +26,8 @@ public final class MdBlockBoundary {
                 Action.CLEAR_LIST_CONTEXT)),
         HEADING(actions(Action.CLOSE_TABLE, Action.CLOSE_BLOCK_QUOTE, Action.RESET_PARAGRAPH,
                 Action.CLEAR_LIST_CONTEXT)),
-        BULLET_ITEM(actions(Action.CLOSE_BLOCK_QUOTE, Action.RESET_PARAGRAPH)),
-        NUMBER_ITEM(actions(Action.CLOSE_BLOCK_QUOTE, Action.INSERT_AUTO_BLANK_IF_PREV_HEADING,
-                Action.RESET_PARAGRAPH)),
+        BULLET_ITEM(actions(Action.CLOSE_BLOCK_QUOTE, Action.INSERT_AUTO_BLANK_IF_PREV_HEADING)),
+        NUMBER_ITEM(actions(Action.CLOSE_BLOCK_QUOTE, Action.INSERT_AUTO_BLANK_IF_PREV_HEADING)),
         TABLE_LINE(actions(Action.CLOSE_BLOCK_QUOTE, Action.RESET_PARAGRAPH));
 
         final EnumSet<Action> actions;
@@ -62,7 +61,7 @@ public final class MdBlockBoundary {
                 break;
 
             case INSERT_AUTO_BLANK_IF_PREV_HEADING:
-                ctx.st.ensureAutoBlankIfPrevHeading(ctx.sheet, ctx.styles.normalStyle);
+                ctx.st.ensureAutoBlankIfPrevHeading(ctx.sheet, ctx.styles.blankRowStyle);
                 break;
 
             case RESET_PARAGRAPH:

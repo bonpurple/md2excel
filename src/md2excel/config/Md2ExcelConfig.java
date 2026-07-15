@@ -23,7 +23,7 @@ public final class Md2ExcelConfig {
     private static final int DEFAULT_H1_FONT_SIZE = 16;
     private static final int DEFAULT_H2_FONT_SIZE = 14;
     private static final int DEFAULT_H3_FONT_SIZE = 12;
-    private static final int DEFAULT_NORMAL_FONT_SIZE = 10;
+    private static final int DEFAULT_NORMAL_FONT_SIZE = 11;
     private static final int DEFAULT_MERGE_COLS = 40;
 
     private Md2ExcelConfig(String in, String out, int mergeCols, String fontName, int h1, int h2, int h3, int normal,
@@ -60,8 +60,8 @@ public final class Md2ExcelConfig {
         // 縦位置
         String[] valignOptions = { "上揃え", "上下中央揃え", "下揃え" };
         Object selectedAlign = JOptionPane.showInputDialog(null, "セルの縦方向の配置を選択してください。", "縦位置",
-                JOptionPane.QUESTION_MESSAGE, null, valignOptions, "上下中央揃え");
-        VerticalAlignment vAlign = (selectedAlign == null) ? VerticalAlignment.CENTER
+                JOptionPane.QUESTION_MESSAGE, null, valignOptions, "下揃え");
+        VerticalAlignment vAlign = (selectedAlign == null) ? VerticalAlignment.BOTTOM
                 : toVerticalAlignment(selectedAlign.toString());
 
         // サイズ

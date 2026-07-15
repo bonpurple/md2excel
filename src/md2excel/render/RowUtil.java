@@ -55,14 +55,11 @@ public final class RowUtil {
             return true;
 
         case BLOCK_QUOTE:
-            // 既存：見出し直後は詰めない＋引用の連続扱いも詰めない
-            return st.lastContentType != RenderState.ContentType.HEADING
-                    && st.lastContentType != RenderState.ContentType.CODE && !st.lastWasBlockQuote;
+            return false;
 
         case BULLET_ITEM:
         case NUMBER_ITEM:
-            // 既存：見出し直後は詰めない
-            return st.lastContentType != RenderState.ContentType.HEADING;
+            return false;
 
         case CODE_LINE:
             // 既存：直前コンテンツが (BULLET/NUMBER/NORMAL) のときだけ詰める

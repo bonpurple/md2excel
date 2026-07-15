@@ -9,8 +9,9 @@ public final class Md2ExcelSheetUtil {
     private Md2ExcelSheetUtil() {
     }
 
-    public static void createHorizontalRuleRow(Sheet sheet, Row row, CellStyle style, int mergeCols) {
-        for (int c = 0; c < mergeCols; c++) {
+    public static void createHorizontalRuleRow(Sheet sheet, Row row, CellStyle style, int startCol,
+            int endColExclusive) {
+        for (int c = startCol; c < endColExclusive; c++) {
             Cell cell = row.createCell(c);
             cell.setCellStyle(style);
         }

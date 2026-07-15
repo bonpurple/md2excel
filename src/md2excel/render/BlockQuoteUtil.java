@@ -11,12 +11,16 @@ public final class BlockQuoteUtil {
     }
 
     public static void closeBlockQuoteIfOpen(Sheet sheet, MdStyle styles, RenderState st) {
-        if (!st.inBlockQuote)
+        if (!st.inBlockQuote) {
+            st.blankBlockQuoteRows.clear();
             return;
-        if (st.blockQuoteFirstRow < 0 || st.blockQuoteLastRow < 0)
+        }
+        if (st.blockQuoteFirstRow < 0 || st.blockQuoteLastRow < 0) {
+            st.blankBlockQuoteRows.clear();
             return;
+        }
 
-        applyBlockQuoteStyle(sheet, styles, st.blockQuoteFirstRow, st.blockQuoteLastRow, st.blockQuoteCol,
+        applyBlockQuoteStyle(sheet, styles, st, st.blockQuoteFirstRow, st.blockQuoteLastRow, st.blockQuoteCol,
                 st.lastColIndex);
 
         st.inBlockQuote = false;
@@ -24,10 +28,11 @@ public final class BlockQuoteUtil {
         st.blockQuoteLastRow = -1;
         st.blockQuoteCellRow = -1;
         st.blockQuoteCellCol = -1;
+        st.blankBlockQuoteRows.clear();
     }
 
-    private static void applyBlockQuoteStyle(Sheet sheet, MdStyle styles, int firstRow, int lastRow, int startCol,
-            int lastColIndex) {
+    private static void applyBlockQuoteStyle(Sheet sheet, MdStyle styles, RenderState st, int firstRow, int lastRow,
+            int startCol, int lastColIndex) {
 
         int fillEndCol = Math.max(startCol, lastColIndex);
 
@@ -35,6 +40,8 @@ public final class BlockQuoteUtil {
             Row rowObj = sheet.getRow(r);
             if (rowObj == null)
                 continue;
+
+            boolean blankQuoteRow = st.blankBlockQuoteRows.contains(r);
 
             for (int c = startCol; c <= fillEndCol; c++) {
                 Cell cell = rowObj.getCell(c);
@@ -44,7 +51,11 @@ public final class BlockQuoteUtil {
                 }
 
                 boolean isLeft = (c == startCol);
-                cell.setCellStyle(isLeft ? styles.blockQuoteLeftStyle : styles.blockQuoteBodyStyle);
+                if (blankQuoteRow) {
+                    cell.setCellStyle(isLeft ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
+                } else {
+                    cell.setCellStyle(isLeft ? styles.blockQuoteLeftStyle : styles.blockQuoteBodyStyle);
+                }
             }
         }
     }

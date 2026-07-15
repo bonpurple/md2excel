@@ -1,7 +1,9 @@
 package md2excel.render;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
@@ -32,7 +34,10 @@ final class RenderState {
     final int mergeLastCol;
     final int lastColIndex;
 
-    int rowIndex = 0;
+    final int startRowIndex;
+    final int startColIndex;
+
+    int rowIndex;
 
     // リスト
     final List<ListStackUtil.ListLevel> listStack = new ArrayList<>();
@@ -49,7 +54,7 @@ final class RenderState {
 
     // 番号付き説明行
     boolean inNestedNumberBlock = false;
-    int nestedNumberCol = 1;
+    int nestedNumberCol;
     int nestedNumberIndent = 0;
 
     // 直前コンテンツ
@@ -63,7 +68,7 @@ final class RenderState {
     int codeBlockLastRow = -1;
     int codeBlockCol = 0;
     int currentCodeBlockIndent = 0;
-    
+
     // 開始コードフェンス情報
     char codeFenceMarker = '\0';
     int codeFenceLength = 0;
@@ -119,6 +124,8 @@ final class RenderState {
     CellStyle pendingSameColBrStyle = null;
     String pendingSameColBrCarry = "";
 
+    final Set<Integer> blankBlockQuoteRows = new HashSet<Integer>();
+
     // =========================
     // 状態遷移をここ1か所に集約
     // =========================
@@ -146,8 +153,28 @@ final class RenderState {
     }
 
     RenderState(int mergeCols) {
-        this.mergeLastCol = mergeCols;
-        this.lastColIndex = mergeCols - 1;
+        this(mergeCols, 0, 0);
+    }
+
+    RenderState(int mergeCols, int startRowIndex, int startColIndex) {
+        this.startRowIndex = Math.max(0, startRowIndex);
+        this.startColIndex = Math.max(0, startColIndex);
+
+        // mergeCols は「A列起点の総列数」。
+        // 開始列を右へずらした分だけ、描画可能範囲の右端も左へ寄せる。
+        // 例: startColIndex=1(B列開始), mergeCols=40 のとき
+        // 列幅設定対象 : A..AN
+        // 描画可能範囲 : B..AM
+        int mergeLastColExclusive = mergeCols - this.startColIndex;
+        if (mergeLastColExclusive <= this.startColIndex) {
+            mergeLastColExclusive = this.startColIndex + 1;
+        }
+
+        this.mergeLastCol = mergeLastColExclusive;
+        this.lastColIndex = this.mergeLastCol - 1;
+
+        this.rowIndex = this.startRowIndex;
+        this.nestedNumberCol = this.startColIndex + 1;
     }
 
     // 共通（「何かを書いた後」）の固定化。※ lastWasBlockQuote は呼び出し側（Tx）で決める
@@ -213,7 +240,7 @@ final class RenderState {
             lastBlankAfterTable = false;
 
             lastContentType = ContentType.HEADING;
-            lastContentCol = 0;
+            lastContentCol = startColIndex;
             lastContentWasTable = false;
 
             inHeadingParagraphBlock = true;
@@ -415,7 +442,7 @@ final class RenderState {
 
         inNestedNumberBlock = false;
         nestedNumberIndent = 0;
-        nestedNumberCol = 1;
+        nestedNumberCol = startColIndex + 1;
 
         // ※ listStack は “インデント深さ計算” に使っているのでここでは消さない
         // （見出しで listStack を消すと、見出し後のインデント列決定が崩れる可能性があるため）
@@ -500,7 +527,7 @@ final class RenderState {
 
     /** Markdown空行（入力の空行）を処理する：必要なら行を作り、必要なら作らない。 */
     void onMarkdownBlankLine(Sheet sheet, CellStyle normalRowStyle) {
-        // 連続空行 or 直前が水平線なら「行は増やさない」(従来仕様)
+        // 連続空行 or 直前が水平線なら「行は増やさない」
         if (lastRowType == RowType.BLANK || lastRowType == RowType.HORIZONTAL_RULE) {
             afterConsumeMarkdownBlankWithoutNewRow();
             return;
@@ -512,7 +539,7 @@ final class RenderState {
 
     /** 見出し前の自動空行：必要なときだけ入れる（従来仕様） */
     void ensureAutoBlankBeforeHeadingIfNeeded(Sheet sheet, CellStyle normalRowStyle) {
-        if (rowIndex > 0 && lastRowType != RowType.BLANK) {
+        if (rowIndex > startRowIndex && lastRowType != RowType.BLANK) {
             writeAutoBlank(sheet, normalRowStyle);
         }
     }
@@ -535,6 +562,16 @@ final class RenderState {
     void ensureAutoBlankIfPrevCodeBlock(Sheet sheet, CellStyle normalRowStyle) {
         if (lastContentType == ContentType.CODE && lastRowType != RowType.BLANK) {
             writeAutoBlank(sheet, normalRowStyle);
+        }
+    }
+
+    void ensureAutoBlankBeforeBlockQuoteIfNeeded(Sheet sheet, CellStyle blankRowStyle) {
+        boolean prevNeedsSeparator = lastContentType == ContentType.NORMAL || lastContentType == ContentType.BULLET
+                || lastContentType == ContentType.NUMBER || lastContentType == ContentType.HEADING;
+
+        if (!inBlockQuote && !lastWasBlockQuote && rowIndex > startRowIndex && lastRowType != RowType.BLANK
+                && prevNeedsSeparator) {
+            writeAutoBlank(sheet, blankRowStyle);
         }
     }
 

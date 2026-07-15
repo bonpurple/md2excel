@@ -14,6 +14,25 @@ import md2excel.markdown.MdTextUtil;
 
 public final class MarkdownRenderer {
 
+    private enum QuoteContentKind {
+        BLANK,
+        BULLET_ITEM,
+        NUMBER_ITEM,
+        NORMAL
+    }
+
+    private static final class QuotedContent {
+        final QuoteContentKind kind;
+        final String text;
+        final int indent;
+
+        QuotedContent(QuoteContentKind kind, String text, int indent) {
+            this.kind = kind;
+            this.text = text;
+            this.indent = indent;
+        }
+    }
+
     private enum LineKind {
         CODE_FENCE(MdBlockBoundary.Policy.CODE_FENCE),
         CODE_LINE(MdBlockBoundary.Policy.NONE), // inCodeBlock中は境界処理しない（従来通り）
@@ -43,11 +62,21 @@ public final class MarkdownRenderer {
         // kind別で使う派生値（必要なものだけ埋める）
         final int headingLevel; // kindがHEADINGのときのみ >=1
         final String headingText; // kindがHEADINGのときのみ
-        final String quoteText; // kindがBLOCK_QUOTEのときのみ（">"除去済み）
+        final String quoteText; // kindがBLOCK_QUOTEのときに使う描画テキスト
         final String bulletMarkdownText;// kindがBULLET_ITEMのときのみ（"・ "付与済み）
+
+        // 引用内の種別
+        final QuoteContentKind quoteContentKind;
+        final int quoteContentIndent;
 
         private LineInfo(String raw, String trimmed, int indent, LineKind kind, int headingLevel, String headingText,
                 String quoteText, String bulletMarkdownText) {
+            this(raw, trimmed, indent, kind, headingLevel, headingText, quoteText, bulletMarkdownText, null, 0);
+        }
+
+        private LineInfo(String raw, String trimmed, int indent, LineKind kind, int headingLevel, String headingText,
+                String quoteText, String bulletMarkdownText, QuoteContentKind quoteContentKind,
+                int quoteContentIndent) {
             this.raw = raw;
             this.trimmed = trimmed;
             this.indent = indent;
@@ -57,6 +86,9 @@ public final class MarkdownRenderer {
             this.headingText = headingText;
             this.quoteText = quoteText;
             this.bulletMarkdownText = bulletMarkdownText;
+
+            this.quoteContentKind = quoteContentKind;
+            this.quoteContentIndent = quoteContentIndent;
         }
 
         boolean isTableLike() {
@@ -68,7 +100,7 @@ public final class MarkdownRenderer {
             int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
 
             // 1) コードブロック中は「正しい閉じフェンス」だけ CODE_FENCE。
-            //    それ以外は全部本文扱い。
+            // それ以外は全部本文扱い。
             if (st.inCodeBlock) {
                 if (MdTextUtil.isClosingCodeFenceLine(trimmed, st.codeFenceMarker, st.codeFenceLength)) {
                     return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, null, null);
@@ -93,11 +125,12 @@ public final class MarkdownRenderer {
 
             // 5) block quote（テーブル判定より先："> |a|b|" は引用扱い）
             if (trimmed.startsWith(">")) {
-                String quoteText = trimmed.substring(1).trim();
-                return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, quoteText, null);
+                QuotedContent qc = parseQuotedContent(rawLine);
+                return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, qc.text, null, qc.kind,
+                        qc.indent);
             }
 
-            // 6) table（isTableLine をここで1回だけ）
+            // 6) table
             if (MarkdownTable.isTableLine(rawLine)) {
                 boolean sep = MarkdownTable.isTableSeparatorLine(trimmed);
                 return new LineInfo(rawLine, trimmed, indent, sep ? LineKind.TABLE_SEPARATOR : LineKind.TABLE_ROW, -1,
@@ -127,6 +160,47 @@ public final class MarkdownRenderer {
             }
 
             return new LineInfo(rawLine, trimmed, indent, LineKind.NORMAL, -1, null, null, null);
+        }
+
+        private static QuotedContent parseQuotedContent(String rawLine) {
+            int i = 0;
+            while (i < rawLine.length()) {
+                char ch = rawLine.charAt(i);
+                if (ch == ' ' || ch == '\t') {
+                    i++;
+                    continue;
+                }
+                break;
+            }
+
+            if (i < rawLine.length() && rawLine.charAt(i) == '>') {
+                i++;
+            }
+            if (i < rawLine.length() && rawLine.charAt(i) == ' ') {
+                i++;
+            }
+
+            String innerRaw = (i < rawLine.length()) ? rawLine.substring(i) : "";
+            String innerTrimmed = innerRaw.trim();
+            int innerIndent = MdTextUtil.countLeadingSpacesOrTabs(innerRaw);
+
+            if (innerTrimmed.isEmpty()) {
+                return new QuotedContent(QuoteContentKind.BLANK, "", innerIndent);
+            }
+
+            if (innerTrimmed.length() >= 2) {
+                char m = innerTrimmed.charAt(0);
+                if ((m == '*' || m == '-' || m == '+') && Character.isWhitespace(innerTrimmed.charAt(1))) {
+                    String content = innerTrimmed.substring(2).trim();
+                    return new QuotedContent(QuoteContentKind.BULLET_ITEM, "・ " + content, innerIndent);
+                }
+            }
+
+            if (MdTextUtil.isNumberedListLine(innerTrimmed)) {
+                return new QuotedContent(QuoteContentKind.NUMBER_ITEM, innerTrimmed, innerIndent);
+            }
+
+            return new QuotedContent(QuoteContentKind.NORMAL, innerTrimmed, innerIndent);
         }
     }
 
@@ -200,7 +274,7 @@ public final class MarkdownRenderer {
 
         // 開始
         if (!ctx.st.inCodeBlock) {
-            ctx.st.ensureAutoBlankIfPrevBlockQuote(ctx.sheet, ctx.styles.normalStyle);
+            ctx.st.ensureAutoBlankIfPrevBlockQuote(ctx.sheet, ctx.styles.blankRowStyle);
             ctx.st.currentCodeBlockIndent = li.indent;
 
             ctx.st.codeFenceMarker = MdTextUtil.getCodeFenceMarker(li.trimmed);
@@ -281,67 +355,105 @@ public final class MarkdownRenderer {
     }
 
     private static void handleBlankLine(LineInfo li, RenderContext ctx) {
-        ctx.st.onMarkdownBlankLine(ctx.sheet, ctx.styles.normalStyle);
+        ctx.st.onMarkdownBlankLine(ctx.sheet, ctx.styles.blankRowStyle);
     }
 
     private static void handleHorizontalRule(LineInfo li, RenderContext ctx) {
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx, RowUtil.ReuseKind.HORIZONTAL_RULE,
-                ctx.styles.normalStyle);
-        Md2ExcelSheetUtil.createHorizontalRuleRow(ctx.sheet, row, ctx.styles.horizontalRuleStyle, ctx.st.mergeLastCol);
+                ctx.styles.blankRowStyle);
+        Md2ExcelSheetUtil.createHorizontalRuleRow(ctx.sheet, row, ctx.styles.horizontalRuleStyle, ctx.st.startColIndex,
+                ctx.st.mergeLastCol);
         ctx.st.afterWriteHorizontalRule();
     }
 
     private static void handleBlockQuote(LineInfo li, RenderContext ctx) {
-        ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.normalStyle);
+        ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.blankRowStyle);
+        ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
 
-        String quoteText = applyHardLineBreak(li.quoteText, li);
-        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(quoteText);
-        boolean hasBr = sp.endsWithBr || sp.lines.size() >= 2;
+        int quoteStartCol = calcQuoteStartCol(li.indent, ctx.st);
 
-        if (!hasBr && ctx.st.inBlockQuote && ctx.st.blockQuoteCellRow >= 0 && ctx.st.blockQuoteCellCol >= 0
-                && ctx.st.lastRowType == RenderState.RowType.OTHER && !ctx.st.lastBlankFromMarkdown) {
-
-            appendBrSplitLineWithSpace(ctx, ctx.st.blockQuoteCellRow, ctx.st.blockQuoteCellCol, sp, 0,
-                    ctx.styles.normalStyle);
-
-            ctx.st.afterAppendBlockQuoteLine();
-            return;
+        if (ctx.st.pendingListBr) {
+            if (li.quoteContentKind == QuoteContentKind.NORMAL) {
+                if (tryConsumeQuotedListBr(li, ctx, quoteStartCol)) {
+                    return;
+                }
+            } else {
+                clearPendingListBr(ctx.st);
+            }
         }
 
-        int col = calcBlockStartCol(li.indent, ctx.st);
-
-        Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.BLOCK_QUOTE,
-                ctx.styles.normalStyle);
-        Cell cell = row.createCell(col);
-        setBrSplitLineCell(ctx, cell, sp, 0, ctx.styles.normalStyle);
-        ctx.st.afterWriteBlockQuoteLine(row.getRowNum(), col);
-
-        for (int i = 1; i < sp.lines.size(); i++) {
-            Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
-            Cell c2 = r2.createCell(col);
-            setBrSplitLineCell(ctx, c2, sp, i, ctx.styles.normalStyle);
-            ctx.st.afterWriteBlockQuoteLine(r2.getRowNum(), col);
+        if (ctx.st.pendingSameColBr) {
+            if (li.quoteContentKind == QuoteContentKind.NORMAL) {
+                if (tryConsumeQuotedSameColBr(li, ctx, quoteStartCol)) {
+                    return;
+                }
+            } else {
+                clearPendingSameColBr(ctx.st);
+            }
         }
 
-        ctx.st.pendingQuoteBr = sp.endsWithBr;
-        ctx.st.pendingQuoteBrCol = col;
-        ctx.st.pendingQuoteBrCarry = sp.carryPrefix;
+        switch (li.quoteContentKind) {
+        case BLANK:
+            handleQuotedBlank(li, ctx, quoteStartCol);
+            break;
+        case BULLET_ITEM:
+            handleQuotedBullet(li, ctx, quoteStartCol);
+            break;
+        case NUMBER_ITEM:
+            handleQuotedNumberedList(li, ctx, quoteStartCol);
+            break;
+        case NORMAL:
+        default:
+            handleQuotedNormal(li, ctx, quoteStartCol);
+            break;
+        }
     }
 
     private static boolean tryConsumeQuoteBr(LineInfo li, RenderContext ctx) {
         if (!ctx.st.pendingQuoteBr)
             return false;
 
-        if (li.kind != LineKind.BLOCK_QUOTE && li.kind != LineKind.NORMAL) {
-            ctx.st.pendingQuoteBr = false;
-            ctx.st.pendingQuoteBrCarry = "";
+        if (li.kind == LineKind.BLOCK_QUOTE) {
+            if (li.quoteContentKind == QuoteContentKind.NORMAL) {
+                String text = ctx.st.pendingQuoteBrCarry + applyHardLineBreak(li.quoteText, li);
+                MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
+
+                for (int i = 0; i < sp.lines.size(); i++) {
+                    Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+                    Cell cell = row.createCell(ctx.st.pendingQuoteBrCol);
+                    setBrSplitLineCell(ctx, cell, sp, i, ctx.styles.normalStyle);
+                    ctx.st.afterWriteBlockQuoteLine(row.getRowNum(), ctx.st.pendingQuoteBrCol);
+                }
+
+                if (sp.endsWithBr) {
+                    ctx.st.pendingQuoteBr = true;
+                    ctx.st.pendingQuoteBrCarry = sp.carryPrefix;
+                } else {
+                    clearPendingQuoteBr(ctx.st);
+                }
+                return true;
+            }
+
+            // 通常文以外（番号付き/箇条書き/空行）はここで吸わない。
+            // ただし番号付き/箇条書きの前には、hard break 由来の可視空行を1行入れる。
+            int pendingCol = ctx.st.pendingQuoteBrCol;
+            boolean insertBlank = li.quoteContentKind == QuoteContentKind.BULLET_ITEM
+                    || li.quoteContentKind == QuoteContentKind.NUMBER_ITEM;
+
+            clearPendingQuoteBr(ctx.st);
+
+            if (insertBlank) {
+                writeQuotedBlankRow(ctx, pendingCol);
+            }
             return false;
         }
 
-        String text = (li.kind == LineKind.BLOCK_QUOTE) ? li.quoteText : li.trimmed;
-        text = applyHardLineBreak(text, li);
-        text = ctx.st.pendingQuoteBrCarry + text;
+        if (li.kind != LineKind.NORMAL) {
+            clearPendingQuoteBr(ctx.st);
+            return false;
+        }
 
+        String text = ctx.st.pendingQuoteBrCarry + applyHardLineBreak(li.trimmed, li);
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
 
         for (int i = 0; i < sp.lines.size(); i++) {
@@ -351,9 +463,20 @@ public final class MarkdownRenderer {
             ctx.st.afterWriteBlockQuoteLine(row.getRowNum(), ctx.st.pendingQuoteBrCol);
         }
 
-        ctx.st.pendingQuoteBr = sp.endsWithBr;
-        ctx.st.pendingQuoteBrCarry = sp.carryPrefix;
+        if (sp.endsWithBr) {
+            ctx.st.pendingQuoteBr = true;
+            ctx.st.pendingQuoteBrCarry = sp.carryPrefix;
+        } else {
+            clearPendingQuoteBr(ctx.st);
+        }
+
         return true;
+    }
+
+    private static void clearPendingQuoteBr(RenderState st) {
+        st.pendingQuoteBr = false;
+        st.pendingQuoteBrCol = 0;
+        st.pendingQuoteBrCarry = "";
     }
 
     private static void handleTableSeparatorLine(LineInfo li, RenderContext ctx) {
@@ -394,7 +517,7 @@ public final class MarkdownRenderer {
     }
 
     private static void handleHeading(LineInfo li, RenderContext ctx) {
-        ctx.st.ensureAutoBlankBeforeHeadingIfNeeded(ctx.sheet, ctx.styles.normalStyle);
+        ctx.st.ensureAutoBlankBeforeHeadingIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
 
         CellStyle style = (li.headingLevel == 1) ? ctx.styles.heading1Style
                 : (li.headingLevel == 2) ? ctx.styles.heading2Style
@@ -404,13 +527,13 @@ public final class MarkdownRenderer {
         MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(headingText);
 
         Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
-        Cell cell = row.createCell(0);
+        Cell cell = row.createCell(rootCol(ctx.st));
         setBrSplitLineCell(ctx, cell, sp, 0, style);
         ctx.st.afterWriteHeading();
 
         for (int i = 1; i < sp.lines.size(); i++) {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
-            Cell c2 = r2.createCell(0);
+            Cell c2 = r2.createCell(rootCol(ctx.st));
             setBrSplitLineCell(ctx, c2, sp, i, style);
             ctx.st.afterWriteHeading();
         }
@@ -435,7 +558,7 @@ public final class MarkdownRenderer {
 
         for (int i = 0; i < sp.lines.size(); i++) {
             Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
-            Cell cell = row.createCell(0);
+            Cell cell = row.createCell(rootCol(ctx.st));
             setBrSplitLineCell(ctx, cell, sp, i, style);
             ctx.st.afterWriteHeading();
         }
@@ -447,7 +570,7 @@ public final class MarkdownRenderer {
 
     private static void handleBullet(LineInfo li, RenderContext ctx) {
         int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.indent, false);
-        int col = clampCol(1 + depth, ctx.st);
+        int col = clampCol(ctx.st.startColIndex + 1 + depth, ctx.st);
 
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.BULLET_ITEM,
                 ctx.styles.normalStyle);
@@ -484,7 +607,7 @@ public final class MarkdownRenderer {
 
     private static void handleNumberedList(LineInfo li, RenderContext ctx) {
         int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.indent, true);
-        int col = clampCol(1 + depth, ctx.st);
+        int col = clampCol(ctx.st.startColIndex + 1 + depth, ctx.st);
 
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.NUMBER_ITEM,
                 ctx.styles.normalStyle);
@@ -523,11 +646,16 @@ public final class MarkdownRenderer {
         if (!ctx.st.pendingListBr)
             return false;
 
+        if (li.kind == LineKind.BLOCK_QUOTE) {
+            if (ctx.st.inBlockQuote) {
+                return false;
+            }
+            clearPendingListBr(ctx.st);
+            return false;
+        }
+
         if (li.kind != LineKind.NORMAL) {
-            ctx.st.pendingListBr = false;
-            ctx.st.pendingListBrHasCell = false;
-            ctx.st.pendingListBrRow = -1;
-            ctx.st.pendingListBrCarry = "";
+            clearPendingListBr(ctx.st);
             return false;
         }
 
@@ -565,7 +693,7 @@ public final class MarkdownRenderer {
             return;
         }
 
-        ctx.st.ensureAutoBlankIfPrevHeading(ctx.sheet, ctx.styles.normalStyle);
+        ctx.st.ensureAutoBlankIfPrevHeading(ctx.sheet, ctx.styles.blankRowStyle);
 
         int indent = li.indent;
 
@@ -628,25 +756,38 @@ public final class MarkdownRenderer {
     private static boolean tryConsumeSameColBr(LineInfo li, RenderContext ctx) {
         if (!ctx.st.pendingSameColBr)
             return false;
-        if (li.kind != LineKind.NORMAL) {
-            ctx.st.pendingSameColBr = false;
-            ctx.st.pendingSameColBrCarry = "";
-            return false;
+
+        if (li.kind == LineKind.NORMAL) {
+            String text = ctx.st.pendingSameColBrCarry + applyHardLineBreak(li.trimmed, li);
+            MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
+
+            for (int i = 0; i < sp.lines.size(); i++) {
+                Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+                Cell cell = row.createCell(ctx.st.pendingSameColBrCol);
+                setBrSplitLineCell(ctx, cell, sp, i, ctx.st.pendingSameColBrStyle);
+                ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingSameColBrCol, 0, false);
+            }
+
+            ctx.st.pendingSameColBr = sp.endsWithBr;
+            ctx.st.pendingSameColBrCarry = sp.carryPrefix;
+
+            if (!ctx.st.pendingSameColBr) {
+                ctx.st.pendingSameColBrCol = 0;
+                ctx.st.pendingSameColBrStyle = null;
+                ctx.st.pendingSameColBrCarry = "";
+            }
+            return true;
         }
 
-        String text = ctx.st.pendingSameColBrCarry + applyHardLineBreak(li.trimmed, li);
-        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
+        boolean insertBlank = li.kind == LineKind.BULLET_ITEM || li.kind == LineKind.NUMBER_ITEM;
+        clearPendingSameColBr(ctx.st);
 
-        for (int i = 0; i < sp.lines.size(); i++) {
-            Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
-            Cell cell = row.createCell(ctx.st.pendingSameColBrCol);
-            setBrSplitLineCell(ctx, cell, sp, i, ctx.st.pendingSameColBrStyle);
-            ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingSameColBrCol, 0, false);
+        if (insertBlank) {
+            Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.blankRowStyle);
+            ctx.st.afterWriteAutoBlank(row.getRowNum());
         }
 
-        ctx.st.pendingSameColBr = sp.endsWithBr;
-        ctx.st.pendingSameColBrCarry = sp.carryPrefix;
-        return true;
+        return false;
     }
 
     private static boolean tryAppendToOpenBlockQuote(String trimmed, RenderContext ctx) {
@@ -739,35 +880,30 @@ public final class MarkdownRenderer {
         if (st.lastBlankAfterTable) {
             return false;
         }
-        boolean collapseEmptyLineBetweenPlainParagraphs = indent == 0 && st.lastRowType == RenderState.RowType.BLANK
-                && st.lastBlankFromMarkdown && st.lastBlankRowIndex >= 0 && !st.inListBlock
-                && (st.lastContentType == RenderState.ContentType.NORMAL
-                        || st.lastContentType == RenderState.ContentType.CODE);
-
-        return f.isListNote || f.isListChildParagraph || collapseEmptyLineBetweenPlainParagraphs;
+        return f.isListChildParagraph;
     }
 
     private static int calcNormalTextCol(int indent, RenderState st, NormalTextFlags f) {
         if (f.isHeadingParagraph || f.isListNote) {
-            return 0;
+            return rootCol(st);
         }
         if (f.isListChildParagraph) {
             int parentDepth = ListStackUtil.getParentListDepthForChildParagraph(st.listStack);
-            int col = 2 + Math.max(0, parentDepth);
+            int col = st.startColIndex + 2 + Math.max(0, parentDepth);
             return clampCol(col, st);
         }
 
         int baseCol;
         if (indent == 0) {
-            baseCol = 0;
+            baseCol = st.startColIndex;
         } else if (!st.listStack.isEmpty()) {
             int depth = ListStackUtil.getDepthForIndent(st.listStack, indent);
-            baseCol = 1 + depth;
+            baseCol = st.startColIndex + 1 + depth;
         } else {
             int level = indent / 2;
             if (level < 0)
                 level = 0;
-            baseCol = 1 + level;
+            baseCol = st.startColIndex + 1 + level;
         }
         return clampCol(baseCol, st);
     }
@@ -778,6 +914,10 @@ public final class MarkdownRenderer {
         if (col >= st.mergeLastCol)
             return st.mergeLastCol - 1;
         return col;
+    }
+
+    private static int rootCol(RenderState st) {
+        return clampCol(st.startColIndex, st);
     }
 
     private static String applyHardLineBreak(String text, LineInfo li) {
@@ -795,20 +935,24 @@ public final class MarkdownRenderer {
 
     private static int calcBlockStartCol(int indent, RenderState st) {
         if (indent <= 0) {
-            return 0;
+            return rootCol(st);
         }
 
         int col;
         if (!st.listStack.isEmpty()) {
             int depth = ListStackUtil.getDepthForIndent(st.listStack, indent);
-            col = 1 + depth;
+            col = st.startColIndex + 1 + depth;
         } else {
             int level = indent / 2;
             if (level < 0)
                 level = 0;
-            col = 1 + level;
+            col = st.startColIndex + 1 + level;
         }
         return clampCol(col, st);
+    }
+
+    private static int calcQuoteStartCol(int indent, RenderState st) {
+        return clampCol(calcBlockStartCol(indent, st) + 1, st);
     }
 
     private static void setBrSplitLineCell(RenderContext ctx, Cell cell, MarkdownInline.BrSplitResult sp, int lineIndex,
@@ -841,5 +985,269 @@ public final class MarkdownRenderer {
             this.isListNote = ln;
             this.isListChildParagraph = lcp;
         }
+    }
+
+    private static void handleQuotedNormal(LineInfo li, RenderContext ctx, int quoteStartCol) {
+        String quoteText = applyHardLineBreak(li.quoteText, li);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(quoteText);
+        boolean hasBr = sp.endsWithBr || sp.lines.size() >= 2;
+
+        if (!hasBr && ctx.st.inBlockQuote && ctx.st.blockQuoteCellRow >= 0 && ctx.st.blockQuoteCellCol >= 0
+                && ctx.st.lastRowType == RenderState.RowType.OTHER && !ctx.st.lastBlankFromMarkdown) {
+
+            appendBrSplitLineWithSpace(ctx, ctx.st.blockQuoteCellRow, ctx.st.blockQuoteCellCol, sp, 0,
+                    ctx.styles.normalStyle);
+
+            ctx.st.afterAppendToOpenBlockQuoteFromNormalText(ctx.st.blockQuoteCellRow, ctx.st.blockQuoteCellCol);
+            ctx.st.lastWasBlockQuote = true;
+            return;
+        }
+
+        Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.BLOCK_QUOTE,
+                ctx.styles.normalStyle);
+        Cell cell = row.createCell(quoteStartCol);
+        setBrSplitLineCell(ctx, cell, sp, 0, ctx.styles.normalStyle);
+        ctx.st.afterWriteNormalText(row.getRowNum(), quoteStartCol, 0, false);
+        recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, quoteStartCol);
+
+        for (int i = 1; i < sp.lines.size(); i++) {
+            Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+            Cell c2 = r2.createCell(quoteStartCol);
+            setBrSplitLineCell(ctx, c2, sp, i, ctx.styles.normalStyle);
+            ctx.st.afterWriteBlockQuoteLine(r2.getRowNum(), quoteStartCol);
+            recordQuotedRow(ctx, r2.getRowNum(), quoteStartCol, quoteStartCol);
+        }
+
+        ctx.st.pendingQuoteBr = sp.endsWithBr;
+        ctx.st.pendingQuoteBrCol = quoteStartCol;
+        ctx.st.pendingQuoteBrCarry = sp.carryPrefix;
+
+        // 通常文継続の pending は使わない
+        ctx.st.pendingSameColBr = false;
+        ctx.st.pendingSameColBrCol = 0;
+        ctx.st.pendingSameColBrStyle = null;
+        ctx.st.pendingSameColBrCarry = "";
+    }
+
+    private static void handleQuotedBullet(LineInfo li, RenderContext ctx, int quoteStartCol) {
+        int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.quoteContentIndent, false);
+        int col = clampCol(quoteStartCol + 1 + depth, ctx.st);
+
+        Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.BULLET_ITEM,
+                ctx.styles.normalStyle);
+
+        String bulletText = applyHardLineBreak(li.quoteText, li);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(bulletText);
+
+        Cell cell = row.createCell(col);
+        setBrSplitLineCell(ctx, cell, sp, 0, ctx.styles.bulletStyle);
+        ctx.st.afterWriteBulletItem(row.getRowNum(), col);
+        recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, -1);
+
+        int contCol = clampCol(col + 1, ctx.st);
+        int lastRowNum = row.getRowNum();
+        for (int i = 1; i < sp.lines.size(); i++) {
+            Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+            Cell c2 = r2.createCell(contCol);
+            setBrSplitLineCell(ctx, c2, sp, i, ctx.styles.bulletStyle);
+            lastRowNum = r2.getRowNum();
+            ctx.st.afterWriteNormalText(lastRowNum, contCol, 0, false);
+            recordQuotedRow(ctx, lastRowNum, quoteStartCol, -1);
+        }
+
+        boolean needCont = sp.endsWithBr || sp.lines.size() >= 2;
+        if (needCont) {
+            ctx.st.pendingListBr = true;
+            ctx.st.pendingListBrCol = contCol;
+            ctx.st.pendingListBrRow = (sp.lines.size() >= 2) ? lastRowNum : -1;
+            ctx.st.pendingListBrHasCell = (sp.lines.size() >= 2);
+            ctx.st.pendingListBrStyle = ctx.styles.bulletStyle;
+            ctx.st.pendingListBrCarry = sp.carryPrefix;
+
+            ctx.st.bulletDetailActive = false;
+        }
+    }
+
+    private static void handleQuotedNumberedList(LineInfo li, RenderContext ctx, int quoteStartCol) {
+        int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.quoteContentIndent, true);
+        int col = clampCol(quoteStartCol + 1 + depth, ctx.st);
+
+        Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.NUMBER_ITEM,
+                ctx.styles.normalStyle);
+
+        String numberedText = applyHardLineBreak(li.quoteText, li);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(numberedText);
+
+        Cell cell = row.createCell(col);
+        setBrSplitLineCell(ctx, cell, sp, 0, ctx.styles.listStyle);
+        ctx.st.afterWriteNumberedItem(li.quoteContentIndent, col);
+        recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, -1);
+
+        int contCol = clampCol(col + 1, ctx.st);
+        int lastRowNum = row.getRowNum();
+        for (int i = 1; i < sp.lines.size(); i++) {
+            Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+            Cell c2 = r2.createCell(contCol);
+            setBrSplitLineCell(ctx, c2, sp, i, ctx.styles.listStyle);
+            lastRowNum = r2.getRowNum();
+            ctx.st.afterWriteNormalText(lastRowNum, contCol, 0, false);
+            recordQuotedRow(ctx, lastRowNum, quoteStartCol, -1);
+        }
+
+        boolean needCont = sp.endsWithBr || sp.lines.size() >= 2;
+        if (needCont) {
+            ctx.st.pendingListBr = true;
+            ctx.st.pendingListBrCol = contCol;
+            ctx.st.pendingListBrRow = (sp.lines.size() >= 2) ? lastRowNum : -1;
+            ctx.st.pendingListBrHasCell = (sp.lines.size() >= 2);
+            ctx.st.pendingListBrStyle = ctx.styles.listStyle;
+            ctx.st.pendingListBrCarry = sp.carryPrefix;
+
+            ctx.st.inNestedNumberBlock = false;
+        }
+    }
+
+    private static void handleQuotedBlank(LineInfo li, RenderContext ctx, int quoteStartCol) {
+        ctx.st.resetOnBlockBoundary();
+        ctx.st.clearListContext();
+        writeQuotedBlankRow(ctx, quoteStartCol);
+    }
+
+    private static void writeQuotedBlankRow(RenderContext ctx, int quoteStartCol) {
+        Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.blankRowStyle);
+
+        Cell cell = row.createCell(quoteStartCol);
+        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, Collections.<MarkdownInline.MdSegment>emptyList(),
+                ctx.styles.blankRowStyle);
+
+        ctx.st.blankBlockQuoteRows.add(row.getRowNum());
+
+        recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, -1);
+
+        ctx.st.lastRowType = RenderState.RowType.BLANK;
+        ctx.st.lastLineWasTable = false;
+        ctx.st.lastBlankFromMarkdown = false;
+        ctx.st.lastBlankRowIndex = -1;
+        ctx.st.lastBlankAfterTable = false;
+
+        ctx.st.lastContentType = RenderState.ContentType.NORMAL;
+        ctx.st.lastContentCol = quoteStartCol;
+        ctx.st.lastContentWasTable = false;
+
+        ctx.st.lastNormalRowIndex = -1;
+        ctx.st.lastNormalIndent = -1;
+        ctx.st.bulletDetailActive = false;
+        ctx.st.lastWasBlockQuote = true;
+    }
+
+    private static boolean tryConsumeQuotedListBr(LineInfo li, RenderContext ctx, int quoteStartCol) {
+        if (!ctx.st.pendingListBr) {
+            return false;
+        }
+
+        String text = ctx.st.pendingListBrCarry + applyHardLineBreak(li.quoteText, li);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
+        CellStyle style = (ctx.st.pendingListBrStyle != null) ? ctx.st.pendingListBrStyle : ctx.styles.normalStyle;
+
+        Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+        Cell cell = row.createCell(ctx.st.pendingListBrCol);
+        setBrSplitLineCell(ctx, cell, sp, 0, style);
+        ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingListBrCol, 0, false);
+        recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, -1);
+
+        ctx.st.pendingListBrRow = row.getRowNum();
+        ctx.st.pendingListBrHasCell = true;
+
+        for (int i = 1; i < sp.lines.size(); i++) {
+            Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+            Cell c2 = r2.createCell(ctx.st.pendingListBrCol);
+            setBrSplitLineCell(ctx, c2, sp, i, style);
+            ctx.st.afterWriteNormalText(r2.getRowNum(), ctx.st.pendingListBrCol, 0, false);
+            recordQuotedRow(ctx, r2.getRowNum(), quoteStartCol, -1);
+            ctx.st.pendingListBrRow = r2.getRowNum();
+        }
+
+        ctx.st.pendingListBr = sp.endsWithBr || sp.lines.size() >= 2;
+        ctx.st.pendingListBrCarry = sp.carryPrefix;
+
+        if (!ctx.st.pendingListBr) {
+            clearPendingListBr(ctx.st);
+        } else {
+            ctx.st.pendingListBrStyle = style;
+        }
+
+        return true;
+    }
+
+    private static boolean tryConsumeQuotedSameColBr(LineInfo li, RenderContext ctx, int quoteStartCol) {
+        if (!ctx.st.pendingSameColBr) {
+            return false;
+        }
+
+        String text = ctx.st.pendingSameColBrCarry + applyHardLineBreak(li.quoteText, li);
+        MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(text);
+        CellStyle style = (ctx.st.pendingSameColBrStyle != null) ? ctx.st.pendingSameColBrStyle
+                : ctx.styles.normalStyle;
+
+        for (int i = 0; i < sp.lines.size(); i++) {
+            Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+            Cell cell = row.createCell(ctx.st.pendingSameColBrCol);
+            setBrSplitLineCell(ctx, cell, sp, i, style);
+            ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingSameColBrCol, 0, false);
+            recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, ctx.st.pendingSameColBrCol);
+        }
+
+        ctx.st.pendingSameColBr = sp.endsWithBr;
+        ctx.st.pendingSameColBrCarry = sp.carryPrefix;
+
+        if (!ctx.st.pendingSameColBr) {
+            clearPendingSameColBr(ctx.st);
+        } else {
+            ctx.st.pendingSameColBrStyle = style;
+        }
+
+        return true;
+    }
+
+    private static void recordQuotedRow(RenderContext ctx, int rowNum, int quoteStartCol, int appendCellCol) {
+        int quoteDecorCol = clampCol(quoteStartCol - 1, ctx.st);
+
+        if (!ctx.st.inBlockQuote || ctx.st.blockQuoteFirstRow < 0) {
+            ctx.st.inBlockQuote = true;
+            ctx.st.blockQuoteFirstRow = rowNum;
+            ctx.st.blockQuoteCol = quoteDecorCol;
+        }
+
+        if (quoteDecorCol < ctx.st.blockQuoteCol) {
+            ctx.st.blockQuoteCol = quoteDecorCol;
+        }
+
+        ctx.st.blockQuoteLastRow = rowNum;
+
+        if (appendCellCol >= 0) {
+            ctx.st.blockQuoteCellRow = rowNum;
+            ctx.st.blockQuoteCellCol = appendCellCol;
+        } else {
+            ctx.st.blockQuoteCellRow = -1;
+            ctx.st.blockQuoteCellCol = -1;
+        }
+
+        ctx.st.lastWasBlockQuote = true;
+    }
+
+    private static void clearPendingListBr(RenderState st) {
+        st.pendingListBr = false;
+        st.pendingListBrCol = 0;
+        st.pendingListBrRow = -1;
+        st.pendingListBrStyle = null;
+        st.pendingListBrCarry = "";
+        st.pendingListBrHasCell = false;
+    }
+
+    private static void clearPendingSameColBr(RenderState st) {
+        st.pendingSameColBr = false;
+        st.pendingSameColBrCol = 0;
+        st.pendingSameColBrStyle = null;
+        st.pendingSameColBrCarry = "";
     }
 }

@@ -18,6 +18,7 @@ public final class MdStyle {
     public final CellStyle heading3Style;
     public final CellStyle heading4Style;
     public final CellStyle normalStyle;
+    public final CellStyle blankRowStyle;
     public final CellStyle bulletStyle;
     public final CellStyle listStyle;
 
@@ -29,9 +30,11 @@ public final class MdStyle {
     public final CellStyle tableBodyStyle;
     public final CellStyle tableBodyLastRowStyle;
 
-    // 引用ブロックは 2 種類だけ（左端・それ以外）
+    // 引用ブロック
     public final CellStyle blockQuoteLeftStyle;
     public final CellStyle blockQuoteBodyStyle;
+    public final CellStyle blockQuoteBlankLeftStyle;
+    public final CellStyle blockQuoteBlankBodyStyle;
 
     // コードブロック枠線スタイル（mask で取り出す）
     // mask bit: 1=TOP, 2=BOTTOM, 4=LEFT, 8=RIGHT
@@ -89,6 +92,14 @@ public final class MdStyle {
         normalFont.setFontName(fontName);
         normalStyle.setFont(normalFont);
 
+        // 空行用
+        blankRowStyle = wb.createCellStyle();
+        blankRowStyle.cloneStyleFrom(base);
+        Font blankFont = wb.createFont();
+        blankFont.setFontHeightInPoints((short) 6);
+        blankFont.setFontName(fontName);
+        blankRowStyle.setFont(blankFont);
+
         // 箇条書き/番号付き（フォントは同じ）
         bulletStyle = wb.createCellStyle();
         bulletStyle.cloneStyleFrom(normalStyle);
@@ -116,12 +127,8 @@ public final class MdStyle {
 
         // ---------------- 水平線 ----------------
         horizontalRuleStyle = wb.createCellStyle();
-        horizontalRuleStyle.cloneStyleFrom(base);
+        horizontalRuleStyle.cloneStyleFrom(blankRowStyle);
         horizontalRuleStyle.setBorderBottom(BorderStyle.HAIR);
-        Font hrFont = wb.createFont();
-        hrFont.setFontName(fontName);
-        hrFont.setFontHeightInPoints((short) normalSize);
-        horizontalRuleStyle.setFont(hrFont);
 
         // ---------------- テーブル ----------------
         CellStyle th = wb.createCellStyle();
@@ -148,7 +155,7 @@ public final class MdStyle {
         tbLast.setBorderBottom(BorderStyle.NONE);
         tableBodyLastRowStyle = tbLast;
 
-        // 引用ブロック（2スタイルのみ作って使い回す）
+        // 引用ブロック（通常行）
         XSSFColor codeBg = ((XSSFCellStyle) this.codeBlockStyle).getFillForegroundXSSFColor();
 
         XSSFCellStyle quoteBody = (XSSFCellStyle) wb.createCellStyle();
@@ -169,6 +176,25 @@ public final class MdStyle {
         XSSFColor blue = new XSSFColor(new Color(0, 112, 192), null);
         quoteLeft.setBorderColor(BorderSide.LEFT, blue);
         this.blockQuoteLeftStyle = quoteLeft;
+
+        // 引用ブロック（空行用）
+        XSSFCellStyle quoteBlankBody = (XSSFCellStyle) wb.createCellStyle();
+        quoteBlankBody.cloneStyleFrom(this.blankRowStyle);
+        if (codeBg != null) {
+            quoteBlankBody.setFillForegroundColor(codeBg);
+            quoteBlankBody.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        }
+        quoteBlankBody.setBorderTop(BorderStyle.NONE);
+        quoteBlankBody.setBorderRight(BorderStyle.NONE);
+        quoteBlankBody.setBorderBottom(BorderStyle.NONE);
+        quoteBlankBody.setBorderLeft(BorderStyle.NONE);
+        this.blockQuoteBlankBodyStyle = quoteBlankBody;
+
+        XSSFCellStyle quoteBlankLeft = (XSSFCellStyle) wb.createCellStyle();
+        quoteBlankLeft.cloneStyleFrom(this.blockQuoteBlankBodyStyle);
+        quoteBlankLeft.setBorderLeft(BorderStyle.THICK);
+        quoteBlankLeft.setBorderColor(BorderSide.LEFT, blue);
+        this.blockQuoteBlankLeftStyle = quoteBlankLeft;
     }
 
     private void initCodeBlockFrameStyles(Workbook wb) {
