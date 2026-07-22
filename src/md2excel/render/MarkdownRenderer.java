@@ -341,7 +341,11 @@ public final class MarkdownRenderer {
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.CODE_LINE,
                 ctx.styles.normalStyle);
 
-        int codeCol = calcBlockStartCol(ctx.st.currentCodeBlockIndent, ctx.st);
+        // 引用ブロックと同じ考え方：
+        // 装飾（塗りつぶし・罫線）は block 開始列から、
+        // 実際のコード本文は 1 列右に置く
+        int frameStartCol = calcBlockStartCol(ctx.st.currentCodeBlockIndent, ctx.st);
+        int codeCol = clampCol(frameStartCol + 1, ctx.st);
 
         int leadingSpaces = li.indent;
         int trimSpaces = ctx.st.computeCodeTrimSpaces(leadingSpaces);
@@ -350,7 +354,10 @@ public final class MarkdownRenderer {
         Cell cell = row.createCell(codeCol);
         MarkdownInline.setCodeBlockRichTextCell(ctx.wb, cell, codeLine, ctx.styles.codeBlockStyle);
 
-        ctx.st.recordCodeBlockLinePos(row.getRowNum(), codeCol);
+        // 枠線・塗りつぶしは frameStartCol から張る
+        ctx.st.recordCodeBlockLinePos(row.getRowNum(), frameStartCol);
+
+        // 直近の内容列としては本文列を保持
         ctx.st.afterWriteCodeLine(codeCol);
     }
 
