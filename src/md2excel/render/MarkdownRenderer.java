@@ -576,6 +576,8 @@ public final class MarkdownRenderer {
     }
 
     private static void handleBullet(LineInfo li, RenderContext ctx) {
+        ctx.st.ensureAutoBlankBeforeChildListOfNumberIfNeeded(ctx.sheet, ctx.styles.blankRowStyle, li.indent);
+
         int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.indent, false);
         int col = clampCol(ctx.st.startColIndex + 1 + depth, ctx.st);
 
@@ -613,6 +615,8 @@ public final class MarkdownRenderer {
     }
 
     private static void handleNumberedList(LineInfo li, RenderContext ctx) {
+        ctx.st.ensureAutoBlankBeforeChildListOfNumberIfNeeded(ctx.sheet, ctx.styles.blankRowStyle, li.indent);
+
         int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.indent, true);
         int col = clampCol(ctx.st.startColIndex + 1 + depth, ctx.st);
 

@@ -575,6 +575,26 @@ final class RenderState {
         }
     }
 
+    /** 直前のリスト項目より深い子リストが始まる場合は自動空行を1行入れる。 */
+    void ensureAutoBlankBeforeChildListIfNeeded(Sheet sheet, CellStyle blankRowStyle, int childIndent) {
+        if (lastRowType == RowType.BLANK) {
+            return;
+        }
+
+        if (lastContentType != ContentType.BULLET && lastContentType != ContentType.NUMBER) {
+            return;
+        }
+
+        if (listStack.isEmpty()) {
+            return;
+        }
+
+        int parentIndent = listStack.get(listStack.size() - 1).indent;
+        if (childIndent > parentIndent) {
+            writeAutoBlank(sheet, blankRowStyle);
+        }
+    }
+
     /** 自動空行を必ず1行書く（Markdown由来ではない、reuse対象にしない） */
     private void writeAutoBlank(Sheet sheet, CellStyle normalRowStyle) {
         Row row = RowUtil.createRow(sheet, this, normalRowStyle);
