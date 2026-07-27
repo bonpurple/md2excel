@@ -20,7 +20,8 @@ public final class MdBlockBoundary {
 
     public enum Policy {
         NONE(actions()),
-        CODE_FENCE(actions(Action.CLOSE_TABLE, Action.CLOSE_BLOCK_QUOTE, Action.RESET_PARAGRAPH)),
+        CODE_FENCE(actions(Action.CLOSE_TABLE, Action.CLOSE_BLOCK_QUOTE, Action.INSERT_AUTO_BLANK_IF_PREV_HEADING,
+                Action.RESET_PARAGRAPH)),
         MARKDOWN_BLANK(actions(Action.CLOSE_BLOCK_QUOTE, Action.RESET_PARAGRAPH)),
         HORIZONTAL_RULE(actions(Action.CLOSE_TABLE, Action.CLOSE_BLOCK_QUOTE, Action.RESET_PARAGRAPH,
                 Action.CLEAR_LIST_CONTEXT)),
