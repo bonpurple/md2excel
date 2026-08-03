@@ -575,22 +575,30 @@ final class RenderState {
         }
     }
 
-    /** 直前のリスト項目より深い子リストが始まる場合は自動空行を1行入れる。 */
-    void ensureAutoBlankBeforeChildListIfNeeded(Sheet sheet, CellStyle blankRowStyle, int childIndent) {
+    /** 直前のネストしたリスト（またはその説明行）が終わり、浅い階層のリストへ戻るか。 */
+    boolean shouldInsertAutoBlankBeforeChildList(int currentIndent) {
         if (lastRowType == RowType.BLANK) {
-            return;
-        }
-
-        if (lastContentType != ContentType.BULLET && lastContentType != ContentType.NUMBER) {
-            return;
+            return false;
         }
 
         if (listStack.isEmpty()) {
-            return;
+            return false;
         }
 
-        int parentIndent = listStack.get(listStack.size() - 1).indent;
-        if (childIndent > parentIndent) {
+        int prevIndent = listStack.get(listStack.size() - 1).indent;
+        if (currentIndent >= prevIndent) {
+            return false;
+        }
+
+        boolean cameFromNestedListContent = lastContentType == ContentType.BULLET
+                || lastContentType == ContentType.NUMBER || bulletDetailActive || inNestedNumberBlock;
+
+        return cameFromNestedListContent;
+    }
+
+    /** 直前のネストしたリスト（またはその説明行）が終わり、浅い階層のリストへ戻る場合は自動空行を1行入れる。 */
+    void ensureAutoBlankBeforeChildListIfNeeded(Sheet sheet, CellStyle blankRowStyle, int currentIndent) {
+        if (shouldInsertAutoBlankBeforeChildList(currentIndent)) {
             writeAutoBlank(sheet, blankRowStyle);
         }
     }

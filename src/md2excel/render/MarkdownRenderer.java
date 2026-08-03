@@ -429,7 +429,9 @@ public final class MarkdownRenderer {
                     Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
                     Cell cell = row.createCell(ctx.st.pendingQuoteBrCol);
                     setBrSplitLineCell(ctx, cell, sp, i, ctx.styles.normalStyle);
-                    ctx.st.afterWriteBlockQuoteLine(row.getRowNum(), ctx.st.pendingQuoteBrCol);
+                    ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingQuoteBrCol, li.quoteContentIndent,
+                            false);
+                    recordQuotedRow(ctx, row.getRowNum(), ctx.st.pendingQuoteBrCol, ctx.st.pendingQuoteBrCol);
                 }
 
                 if (sp.endsWithBr) {
@@ -467,7 +469,8 @@ public final class MarkdownRenderer {
             Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell cell = row.createCell(ctx.st.pendingQuoteBrCol);
             setBrSplitLineCell(ctx, cell, sp, i, ctx.styles.normalStyle);
-            ctx.st.afterWriteBlockQuoteLine(row.getRowNum(), ctx.st.pendingQuoteBrCol);
+            ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingQuoteBrCol, li.quoteContentIndent, false);
+            recordQuotedRow(ctx, row.getRowNum(), ctx.st.pendingQuoteBrCol, ctx.st.pendingQuoteBrCol);
         }
 
         if (sp.endsWithBr) {
@@ -1018,14 +1021,14 @@ public final class MarkdownRenderer {
                 ctx.styles.normalStyle);
         Cell cell = row.createCell(quoteStartCol);
         setBrSplitLineCell(ctx, cell, sp, 0, ctx.styles.normalStyle);
-        ctx.st.afterWriteNormalText(row.getRowNum(), quoteStartCol, 0, false);
+        ctx.st.afterWriteNormalText(row.getRowNum(), quoteStartCol, li.quoteContentIndent, false);
         recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, quoteStartCol);
 
         for (int i = 1; i < sp.lines.size(); i++) {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell c2 = r2.createCell(quoteStartCol);
             setBrSplitLineCell(ctx, c2, sp, i, ctx.styles.normalStyle);
-            ctx.st.afterWriteBlockQuoteLine(r2.getRowNum(), quoteStartCol);
+            ctx.st.afterWriteNormalText(r2.getRowNum(), quoteStartCol, li.quoteContentIndent, false);
             recordQuotedRow(ctx, r2.getRowNum(), quoteStartCol, quoteStartCol);
         }
 
@@ -1041,6 +1044,8 @@ public final class MarkdownRenderer {
     }
 
     private static void handleQuotedBullet(LineInfo li, RenderContext ctx, int quoteStartCol) {
+        ensureQuotedAutoBlankBeforeChildListIfNeeded(li, ctx, quoteStartCol);
+
         int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.quoteContentIndent, false);
         int col = clampCol(quoteStartCol + 1 + depth, ctx.st);
 
@@ -1080,6 +1085,8 @@ public final class MarkdownRenderer {
     }
 
     private static void handleQuotedNumberedList(LineInfo li, RenderContext ctx, int quoteStartCol) {
+        ensureQuotedAutoBlankBeforeChildListIfNeeded(li, ctx, quoteStartCol);
+
         int depth = ListStackUtil.updateListDepth(ctx.st.listStack, li.quoteContentIndent, true);
         int col = clampCol(quoteStartCol + 1 + depth, ctx.st);
 
@@ -1163,7 +1170,7 @@ public final class MarkdownRenderer {
         Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
         Cell cell = row.createCell(ctx.st.pendingListBrCol);
         setBrSplitLineCell(ctx, cell, sp, 0, style);
-        ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingListBrCol, 0, false);
+        ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingListBrCol, li.quoteContentIndent, false);
         recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, -1);
 
         ctx.st.pendingListBrRow = row.getRowNum();
@@ -1173,7 +1180,7 @@ public final class MarkdownRenderer {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell c2 = r2.createCell(ctx.st.pendingListBrCol);
             setBrSplitLineCell(ctx, c2, sp, i, style);
-            ctx.st.afterWriteNormalText(r2.getRowNum(), ctx.st.pendingListBrCol, 0, false);
+            ctx.st.afterWriteNormalText(r2.getRowNum(), ctx.st.pendingListBrCol, li.quoteContentIndent, false);
             recordQuotedRow(ctx, r2.getRowNum(), quoteStartCol, -1);
             ctx.st.pendingListBrRow = r2.getRowNum();
         }
@@ -1204,7 +1211,7 @@ public final class MarkdownRenderer {
             Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell cell = row.createCell(ctx.st.pendingSameColBrCol);
             setBrSplitLineCell(ctx, cell, sp, i, style);
-            ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingSameColBrCol, 0, false);
+            ctx.st.afterWriteNormalText(row.getRowNum(), ctx.st.pendingSameColBrCol, li.quoteContentIndent, false);
             recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, ctx.st.pendingSameColBrCol);
         }
 
@@ -1260,5 +1267,12 @@ public final class MarkdownRenderer {
         st.pendingSameColBrCol = 0;
         st.pendingSameColBrStyle = null;
         st.pendingSameColBrCarry = "";
+    }
+
+    private static void ensureQuotedAutoBlankBeforeChildListIfNeeded(LineInfo li, RenderContext ctx,
+            int quoteStartCol) {
+        if (ctx.st.shouldInsertAutoBlankBeforeChildList(li.quoteContentIndent)) {
+            writeQuotedBlankRow(ctx, quoteStartCol);
+        }
     }
 }
