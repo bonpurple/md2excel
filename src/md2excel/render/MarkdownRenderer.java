@@ -14,32 +14,6 @@ import md2excel.markdown.MdTextUtil;
 
 public final class MarkdownRenderer {
 
-    static enum QuoteContentKind {
-        BLANK,
-        BULLET_ITEM,
-        NUMBER_ITEM,
-        TABLE_SEPARATOR,
-        TABLE_ROW,
-        NORMAL
-    }
-
-    private static final class QuotedContent {
-        final QuoteContentKind kind;
-        final String text; // 通常引用本文、または互換用の表示文字列
-        final int indent;
-
-        final String listMarkerText;
-        final String listContentText;
-
-        QuotedContent(QuoteContentKind kind, String text, int indent, String listMarkerText, String listContentText) {
-            this.kind = kind;
-            this.text = text;
-            this.indent = indent;
-            this.listMarkerText = listMarkerText;
-            this.listContentText = listContentText;
-        }
-    }
-
     static enum LineKind {
         CODE_FENCE(MdBlockBoundary.Policy.CODE_FENCE),
         CODE_LINE(MdBlockBoundary.Policy.NONE), // inCodeBlock中は境界処理しない（従来通り）
@@ -61,30 +35,26 @@ public final class MarkdownRenderer {
     }
 
     static final class LineInfo {
-        final String raw; // 元行（インデント含む）
-        final String trimmed; // raw.trim()
-        final int indent; // leading spaces/tabs（raw基準）
+        final String raw;
+        final String trimmed;
+        final int indent;
         final LineKind kind;
 
         final int headingLevel;
         final String headingText;
-        final String quoteText;
-
-        final QuoteContentKind quoteContentKind;
-        final int quoteContentIndent;
 
         final boolean endsWithHardBreak;
-        final String paragraphText; // 通常行本文（末尾 hard break 記法除去済み）
-        final String listMarkerText; // "・ " / "12. " など
-        final String listContentText; // リスト本文のみ
+        final String paragraphText;
+        final String listMarkerText;
+        final String listContentText;
 
-        final String quoteListMarkerText;
-        final String quoteListContentText;
+        // kind == BLOCK_QUOTE のときだけ設定。
+        // 引用マーカーを除去した内容を通常と同じ parseContent() で解析した結果。
+        final LineInfo quotedContent;
 
         private LineInfo(String raw, String trimmed, int indent, LineKind kind, int headingLevel, String headingText,
-                String quoteText, QuoteContentKind quoteContentKind, int quoteContentIndent, boolean endsWithHardBreak,
-                String paragraphText, String listMarkerText, String listContentText, String quoteListMarkerText,
-                String quoteListContentText) {
+                boolean endsWithHardBreak, String paragraphText, String listMarkerText, String listContentText,
+                LineInfo quotedContent) {
 
             this.raw = raw;
             this.trimmed = trimmed;
@@ -93,17 +63,13 @@ public final class MarkdownRenderer {
 
             this.headingLevel = headingLevel;
             this.headingText = headingText;
-            this.quoteText = quoteText;
-
-            this.quoteContentKind = quoteContentKind;
-            this.quoteContentIndent = quoteContentIndent;
 
             this.endsWithHardBreak = endsWithHardBreak;
             this.paragraphText = paragraphText;
             this.listMarkerText = listMarkerText;
             this.listContentText = listContentText;
-            this.quoteListMarkerText = quoteListMarkerText;
-            this.quoteListContentText = quoteListContentText;
+
+            this.quotedContent = quotedContent;
         }
 
         boolean isTableLike() {
@@ -111,100 +77,122 @@ public final class MarkdownRenderer {
                 return true;
             }
 
-            return kind == LineKind.BLOCK_QUOTE && (quoteContentKind == QuoteContentKind.TABLE_SEPARATOR
-                    || quoteContentKind == QuoteContentKind.TABLE_ROW);
+            if (kind == LineKind.BLOCK_QUOTE && quotedContent != null) {
+                return quotedContent.kind == LineKind.TABLE_SEPARATOR || quotedContent.kind == LineKind.TABLE_ROW;
+            }
+
+            return false;
         }
 
         static LineInfo parse(String rawLine, RenderState st) {
             String trimmed = rawLine.trim();
             int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
-            boolean endsWithHardBreak = hasLineEndHardBreak(rawLine);
 
-            // 1) コードブロック中
+            // コードブロック中だけは最優先。
             if (st.inCodeBlock) {
                 if (MdTextUtil.isClosingCodeFenceLine(trimmed, st.codeFenceMarker, st.codeFenceLength)) {
-                    return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, null, null, 0, false,
-                            null, null, null, null, null);
+
+                    return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, false, null, null,
+                            null, null);
                 }
-                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_LINE, -1, null, null, null, 0, false, null,
-                        null, null, null, null);
+
+                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_LINE, -1, null, false, null, null, null,
+                        null);
             }
 
-            // 2) 開始フェンス
-            if (MdTextUtil.isOpeningCodeFenceLine(trimmed)) {
-                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, null, null, 0, false, null,
-                        null, null, null, null);
-            }
-
-            // 3) blank
-            if (trimmed.isEmpty()) {
-                return new LineInfo(rawLine, trimmed, indent, LineKind.BLANK, -1, null, null, null, 0, false, null,
-                        null, null, null, null);
-            }
-
-            // 4) horizontal rule
-            if (MdTextUtil.isHorizontalRuleLine(trimmed)) {
-                return new LineInfo(rawLine, trimmed, indent, LineKind.HORIZONTAL_RULE, -1, null, null, null, 0, false,
-                        null, null, null, null, null);
-            }
-
-            // 5) block quote
+            // 引用は外側のコンテキストとして扱い、
+            // 中身は通常行と同じ classifier に通す。
             if (trimmed.startsWith(">")) {
-                QuotedContent qc = parseQuotedContent(rawLine);
-                return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, qc.text, qc.kind,
-                        qc.indent, endsWithHardBreak, null, null, null, qc.listMarkerText, qc.listContentText);
+                String innerRaw = stripOneQuoteMarker(rawLine);
+                LineInfo inner = parseContent(innerRaw);
+
+                return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, inner.endsWithHardBreak,
+                        null, null, null, inner);
             }
 
-            // 6) table
+            return parseContent(rawLine);
+        }
+
+        /**
+         * 引用かどうかに依存しない、実際の block classifier。
+         */
+        private static LineInfo parseContent(String rawLine) {
+            String trimmed = rawLine.trim();
+            int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
+            boolean endsWithHardBreak = hasLineEndHardBreak(rawLine);
+
+            // code fence
+            if (MdTextUtil.isOpeningCodeFenceLine(trimmed)) {
+                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, false, null, null, null,
+                        null);
+            }
+
+            // blank
+            if (trimmed.isEmpty()) {
+                return new LineInfo(rawLine, trimmed, indent, LineKind.BLANK, -1, null, false, null, null, null, null);
+            }
+
+            // horizontal rule
+            if (MdTextUtil.isHorizontalRuleLine(trimmed)) {
+                return new LineInfo(rawLine, trimmed, indent, LineKind.HORIZONTAL_RULE, -1, null, false, null, null,
+                        null, null);
+            }
+
+            // table
             if (MarkdownTable.isTableLine(rawLine)) {
-                boolean sep = MarkdownTable.isTableSeparatorLine(trimmed);
-                return new LineInfo(rawLine, trimmed, indent, sep ? LineKind.TABLE_SEPARATOR : LineKind.TABLE_ROW, -1,
-                        null, null, null, 0, false, null, null, null, null, null);
+                boolean separator = MarkdownTable.isTableSeparatorLine(trimmed);
+
+                return new LineInfo(rawLine, trimmed, indent, separator ? LineKind.TABLE_SEPARATOR : LineKind.TABLE_ROW,
+                        -1, null, false, null, null, null, null);
             }
 
-            // 7) heading
+            // heading
             if (trimmed.startsWith("#")) {
                 int level = MdTextUtil.countHeadingLevel(trimmed);
                 String text = trimmed.substring(level).trim();
                 text = MdTextUtil.stripHeadingClosingHashes(text);
                 text = stripLineEndHardBreakMarker(text, rawLine);
 
-                return new LineInfo(rawLine, trimmed, indent, LineKind.HEADING, level, text, null, null, 0,
-                        endsWithHardBreak, null, null, null, null, null);
+                return new LineInfo(rawLine, trimmed, indent, LineKind.HEADING, level, text, endsWithHardBreak, null,
+                        null, null, null);
             }
 
-            // 8) bullet list
+            // bullet
             if (trimmed.length() >= 2) {
-                char m = trimmed.charAt(0);
-                if ((m == '*' || m == '-' || m == '+') && Character.isWhitespace(trimmed.charAt(1))) {
+                char marker = trimmed.charAt(0);
+
+                if ((marker == '*' || marker == '-' || marker == '+') && Character.isWhitespace(trimmed.charAt(1))) {
+
                     String content = trimmed.substring(2).trim();
                     content = stripLineEndHardBreakMarker(content, rawLine);
-                    String markerText = "・ ";
 
-                    return new LineInfo(rawLine, trimmed, indent, LineKind.BULLET_ITEM, -1, null, null, null, 0,
-                            endsWithHardBreak, content, markerText, content, null, null);
+                    return new LineInfo(rawLine, trimmed, indent, LineKind.BULLET_ITEM, -1, null, endsWithHardBreak,
+                            content, "・ ", content, null);
                 }
             }
 
-            // 9) numbered list
+            // numbered list
             if (MdTextUtil.isNumberedListLine(trimmed)) {
                 int markerEnd = findNumberedListMarkerEnd(trimmed);
                 String markerText = trimmed.substring(0, markerEnd).trim() + " ";
+
                 String content = trimmed.substring(markerEnd).trim();
                 content = stripLineEndHardBreakMarker(content, rawLine);
 
-                return new LineInfo(rawLine, trimmed, indent, LineKind.NUMBER_ITEM, -1, null, null, null, 0,
-                        endsWithHardBreak, content, markerText, content, null, null);
+                return new LineInfo(rawLine, trimmed, indent, LineKind.NUMBER_ITEM, -1, null, endsWithHardBreak,
+                        content, markerText, content, null);
             }
 
-            // 10) normal
+            // normal
             String paragraphText = stripLineEndHardBreakMarker(trimmed, rawLine);
-            return new LineInfo(rawLine, trimmed, indent, LineKind.NORMAL, -1, null, null, null, 0, endsWithHardBreak,
-                    paragraphText, null, null, null, null);
+
+            return new LineInfo(rawLine, trimmed, indent, LineKind.NORMAL, -1, null, endsWithHardBreak, paragraphText,
+                    null, null, null);
         }
 
-        private static QuotedContent parseQuotedContent(String rawLine) {
+        private static String stripOneQuoteMarker(String rawLine) {
             int i = 0;
+
             while (i < rawLine.length()) {
                 char ch = rawLine.charAt(i);
                 if (ch == ' ' || ch == '\t') {
@@ -217,47 +205,12 @@ public final class MarkdownRenderer {
             if (i < rawLine.length() && rawLine.charAt(i) == '>') {
                 i++;
             }
+
             if (i < rawLine.length() && rawLine.charAt(i) == ' ') {
                 i++;
             }
 
-            String innerRaw = (i < rawLine.length()) ? rawLine.substring(i) : "";
-            String innerTrimmed = innerRaw.trim();
-            int innerIndent = MdTextUtil.countLeadingSpacesOrTabs(innerRaw);
-
-            if (innerTrimmed.isEmpty()) {
-                return new QuotedContent(QuoteContentKind.BLANK, "", innerIndent, null, null);
-            }
-
-            if (MarkdownTable.isTableLine(innerRaw)) {
-                boolean separator = MarkdownTable.isTableSeparatorLine(innerTrimmed);
-                return new QuotedContent(separator ? QuoteContentKind.TABLE_SEPARATOR : QuoteContentKind.TABLE_ROW,
-                        innerRaw, innerIndent, null, null);
-            }
-
-            if (innerTrimmed.length() >= 2) {
-                char m = innerTrimmed.charAt(0);
-                if ((m == '*' || m == '-' || m == '+') && Character.isWhitespace(innerTrimmed.charAt(1))) {
-                    String content = innerTrimmed.substring(2).trim();
-                    content = stripLineEndHardBreakMarker(content, rawLine);
-                    String markerText = "・ ";
-                    return new QuotedContent(QuoteContentKind.BULLET_ITEM, markerText + content, innerIndent,
-                            markerText, content);
-                }
-            }
-
-            if (MdTextUtil.isNumberedListLine(innerTrimmed)) {
-                int markerEnd = findNumberedListMarkerEnd(innerTrimmed);
-                String markerText = innerTrimmed.substring(0, markerEnd).trim() + " ";
-                String content = innerTrimmed.substring(markerEnd).trim();
-                content = stripLineEndHardBreakMarker(content, rawLine);
-
-                return new QuotedContent(QuoteContentKind.NUMBER_ITEM, markerText + content, innerIndent, markerText,
-                        content);
-            }
-
-            String text = stripLineEndHardBreakMarker(innerTrimmed, rawLine);
-            return new QuotedContent(QuoteContentKind.NORMAL, text, innerIndent, null, null);
+            return (i < rawLine.length()) ? rawLine.substring(i) : "";
         }
 
         private static boolean hasLineEndHardBreak(String rawLine) {
@@ -265,12 +218,15 @@ public final class MarkdownRenderer {
         }
 
         private static String stripLineEndHardBreakMarker(String text, String rawLine) {
+
             if (text == null) {
                 return null;
             }
+
             if (MdTextUtil.hasHardLineBreakByBackslash(rawLine)) {
                 return MdTextUtil.removeTrailingBackslash(text);
             }
+
             return text;
         }
 
@@ -298,6 +254,7 @@ public final class MarkdownRenderer {
             if (marker != '.' && marker != ')') {
                 return -1;
             }
+
             i++;
 
             if (i >= n || !Character.isWhitespace(trimmed.charAt(i))) {
@@ -489,12 +446,19 @@ public final class MarkdownRenderer {
     }
 
     private static void handleBlockQuote(LineInfo li, RenderContext ctx) {
+
         ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.blankRowStyle);
         ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
 
         int quoteStartCol = calcQuoteStartCol(li.indent, ctx.st);
 
-        switch (li.quoteContentKind) {
+        LineInfo q = li.quotedContent;
+
+        if (q == null) {
+            throw new AssertionError("Quoted content is missing");
+        }
+
+        switch (q.kind) {
         case BLANK:
             handleQuotedBlank(ctx, quoteStartCol);
             break;
@@ -505,7 +469,7 @@ public final class MarkdownRenderer {
             break;
 
         case TABLE_ROW:
-            MarkdownTable.TableRowRenderResult rr = renderTableRow(li.quoteText, quoteStartCol, ctx);
+            MarkdownTable.TableRowRenderResult rr = renderTableRow(q.raw, quoteStartCol, ctx);
 
             for (int r = rr.firstRowNum; r <= rr.lastRowNum; r++) {
                 ctx.st.tableBlockQuoteRows.add(r);
@@ -515,14 +479,8 @@ public final class MarkdownRenderer {
             ctx.st.lastWasBlockQuote = true;
             break;
 
-        case NORMAL:
-        case BULLET_ITEM:
-        case NUMBER_ITEM:
-            throw new AssertionError(
-                    "Quote paragraph line should have been handled by ParagraphUtil: " + li.quoteContentKind);
-
         default:
-            throw new AssertionError("Unhandled QuoteContentKind: " + li.quoteContentKind);
+            throw new AssertionError("Quote paragraph line should have been handled by ParagraphUtil: " + q.kind);
         }
     }
 
