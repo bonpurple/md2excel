@@ -67,6 +67,8 @@ public final class BlockQuoteUtil {
                             cell.setCellStyle(styles.tableBodyLastRowQuoteStyle);
                         } else if (currentStyle.getIndex() == styles.tableBodyStyle.getIndex()) {
                             cell.setCellStyle(styles.tableBodyQuoteStyle);
+                        } else {
+                            cell.setCellStyle(styles.blockQuoteBodyStyle);
                         }
                     }
                     continue;
