@@ -104,26 +104,6 @@ final class RenderState {
     int bulletDetailRow = -1;
     int bulletDetailCol = -1;
 
-    boolean pendingHeadingBr = false;
-    int pendingHeadingLevel = 1;
-    String pendingHeadingCarry = "";
-
-    boolean pendingListBr = false;
-    int pendingListBrCol = 0;
-    int pendingListBrRow = -1;
-    CellStyle pendingListBrStyle = null;
-    String pendingListBrCarry = "";
-    boolean pendingListBrHasCell = false;
-
-    boolean pendingQuoteBr = false;
-    int pendingQuoteBrCol = 0;
-    String pendingQuoteBrCarry = "";
-
-    boolean pendingSameColBr = false; // 説明行/通常文の <br> 継続
-    int pendingSameColBrCol = 0;
-    CellStyle pendingSameColBrStyle = null;
-    String pendingSameColBrCarry = "";
-
     final Set<Integer> blankBlockQuoteRows = new HashSet<Integer>();
 
     // =========================
@@ -144,10 +124,6 @@ final class RenderState {
         WRITE_NUMBERED_ITEM,
 
         WRITE_BLOCKQUOTE_LINE,
-        APPEND_BLOCKQUOTE_LINE,
-
-        APPEND_TO_OPEN_BLOCKQUOTE_FROM_NORMAL,
-        APPEND_NORMAL_TO_EXISTING_CELL,
 
         WRITE_NORMAL_TEXT
     }
@@ -344,51 +320,6 @@ final class RenderState {
             cutParagraphLinking();
             return;
 
-        case APPEND_BLOCKQUOTE_LINE:
-            wroteOtherRow(false);
-
-            lastContentType = ContentType.NORMAL;
-            lastContentCol = blockQuoteCellCol;
-            lastContentWasTable = false;
-
-            lastWasBlockQuote = true;
-
-            // 引用追記でも連結は切る
-            cutParagraphLinking();
-            return;
-
-        case APPEND_TO_OPEN_BLOCKQUOTE_FROM_NORMAL:
-            wroteOtherRow(false);
-
-            lastContentType = ContentType.NORMAL;
-            lastContentCol = col;
-            lastContentWasTable = false;
-
-            // “通常行→引用セル追記” は通常段落連結の起点（既存仕様維持）
-            lastNormalRowIndex = rowNum;
-            lastNormalIndent = 0;
-
-            inHeadingParagraphBlock = false;
-
-            // lastWasBlockQuote は触らない（既存仕様維持）
-            return;
-
-        case APPEND_NORMAL_TO_EXISTING_CELL:
-            wroteOtherRow(false);
-
-            lastContentType = ContentType.NORMAL;
-            lastContentCol = col;
-            lastContentWasTable = false;
-
-            // indent==0 のときだけ「通常連結の起点」＋ bulletDetail 終了（既存仕様）
-            if (indent == 0) {
-                lastNormalRowIndex = rowNum;
-                lastNormalIndent = 0;
-                bulletDetailActive = false;
-            }
-            // lastWasBlockQuote は（従来も）ここでは触らない
-            return;
-
         case WRITE_NORMAL_TEXT:
             wroteOtherRow(false);
 
@@ -416,25 +347,6 @@ final class RenderState {
         lastNormalIndent = -1;
         // 「見出し本文ブロック」は段落境界で切る
         inHeadingParagraphBlock = false;
-
-        pendingHeadingBr = false;
-        pendingHeadingCarry = "";
-
-        pendingListBr = false;
-        pendingListBrHasCell = false;
-        pendingListBrRow = -1;
-        pendingListBrCol = 0;
-        pendingListBrStyle = null;
-        pendingListBrCarry = "";
-
-        pendingQuoteBr = false;
-        pendingQuoteBrCol = 0;
-        pendingQuoteBrCarry = "";
-
-        pendingSameColBr = false;
-        pendingSameColBrCol = 0;
-        pendingSameColBrStyle = null;
-        pendingSameColBrCarry = "";
     }
 
     void clearListContext() {
@@ -490,20 +402,8 @@ final class RenderState {
         apply(Tx.WRITE_NUMBERED_ITEM, -1, col, indent, false);
     }
 
-    void afterAppendBlockQuoteLine() {
-        apply(Tx.APPEND_BLOCKQUOTE_LINE, -1, -1, 0, false);
-    }
-
     void afterWriteBlockQuoteLine(int rowNum, int col) {
         apply(Tx.WRITE_BLOCKQUOTE_LINE, rowNum, col, 0, false);
-    }
-
-    void afterAppendToOpenBlockQuoteFromNormalText(int rowNum, int col) {
-        apply(Tx.APPEND_TO_OPEN_BLOCKQUOTE_FROM_NORMAL, rowNum, col, 0, false);
-    }
-
-    void afterAppendNormalToExistingCell(int rowNum, int col, int indent) {
-        apply(Tx.APPEND_NORMAL_TO_EXISTING_CELL, rowNum, col, indent, false);
     }
 
     void afterWriteNormalText(int rowNum, int col, int indent, boolean isListNote) {

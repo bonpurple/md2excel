@@ -1,13 +1,13 @@
 package md2excel.render;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Workbook;
 
 import md2excel.excel.MdStyle;
-import md2excel.markdown.MdTextUtil;
 
 public final class MarkdownTable {
 
@@ -31,11 +31,91 @@ public final class MarkdownTable {
         return true;
     }
 
-    public static int createTableRow(Workbook wb, String line, Row row, MdStyle styles, boolean isHeaderRow,
-            int startCol) {
+    static final class TableRowRenderResult {
+        final int firstRowNum;
+        final int lastRowNum;
+        final int lastCol;
 
+        TableRowRenderResult(int firstRowNum, int lastRowNum, int lastCol) {
+            this.firstRowNum = firstRowNum;
+            this.lastRowNum = lastRowNum;
+            this.lastCol = lastCol;
+        }
+    }
+
+    static TableRowRenderResult createTableRows(RenderContext ctx, String line, boolean isHeaderRow, int startCol) {
+        List<String> rawCells = splitTableCells(line);
+
+        List<List<List<MarkdownInline.MdSegment>>> cellLines = new ArrayList<List<List<MarkdownInline.MdSegment>>>();
+        int maxRowCount = 1;
+
+        for (int i = 0; i < rawCells.size(); i++) {
+            String colText = rawCells.get(i).trim();
+            colText = unescapePipeOutsideInlineCode(colText);
+
+            List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(colText);
+
+            if (lines.isEmpty()) {
+                lines = Collections.<List<MarkdownInline.MdSegment>>singletonList(
+                        Collections.<MarkdownInline.MdSegment>emptyList());
+            }
+
+            cellLines.add(lines);
+
+            if (lines.size() > maxRowCount) {
+                maxRowCount = lines.size();
+            }
+        }
+
+        int firstRowNum = -1;
+        int lastRowNum = -1;
+        int lastCol = startCol - 1;
+
+        for (int rowOffset = 0; rowOffset < maxRowCount; rowOffset++) {
+            Row row = (rowOffset == 0) ? RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st,
+                    RowUtil.ReuseKind.TABLE_ROW, ctx.styles.normalStyle)
+                    : RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+
+            if (firstRowNum < 0) {
+                firstRowNum = row.getRowNum();
+            }
+            lastRowNum = row.getRowNum();
+
+            int colIndex = startCol;
+            for (int c = 0; c < cellLines.size(); c++) {
+                Cell cell = row.createCell(colIndex);
+
+                List<List<MarkdownInline.MdSegment>> lines = cellLines.get(c);
+                List<MarkdownInline.MdSegment> segments = (rowOffset < lines.size()) ? lines.get(rowOffset)
+                        : Collections.<MarkdownInline.MdSegment>emptyList();
+
+                if (isHeaderRow) {
+                    if (!segments.isEmpty()) {
+                        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, segments, ctx.styles.tableHeaderStyle);
+                    } else {
+                        cell.setCellStyle(ctx.styles.tableHeaderStyle);
+                    }
+                } else {
+                    if (!segments.isEmpty()) {
+                        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, segments, ctx.styles.tableBodyStyle);
+                    } else {
+                        cell.setCellStyle(ctx.styles.tableBodyStyle);
+                    }
+                }
+
+                colIndex++;
+            }
+
+            lastCol = Math.max(lastCol, colIndex - 1);
+        }
+
+        return new TableRowRenderResult(firstRowNum, lastRowNum, lastCol);
+    }
+
+    private static List<String> splitTableCells(String line) {
         String trimmed = line.trim();
         String inner = trimmed;
+
         if (inner.startsWith("|")) {
             inner = inner.substring(1);
         }
@@ -43,47 +123,25 @@ public final class MarkdownTable {
             inner = inner.substring(0, inner.length() - 1);
         }
 
-        int colIndex = startCol;
+        List<String> cells = new ArrayList<String>();
 
         int segStart = 0;
         int n = inner.length();
         boolean inCode = false;
+
         for (int i = 0; i <= n; i++) {
             if (i < n && inner.charAt(i) == '`') {
                 inCode = !inCode;
                 continue;
             }
+
             if (i == n || (inner.charAt(i) == '|' && !inCode && !isEscapedPipe(inner, i))) {
-                String colText = inner.substring(segStart, i).trim();
-
-                colText = unescapePipeOutsideInlineCode(colText);
-                colText = MdTextUtil.replaceBrOutsideInlineCode(colText, " ");
-                colText = MdTextUtil.collapseSpaces(colText);
-
-                Cell cell = row.createCell(colIndex++);
-
-                MarkdownInline.BrSplitResult sp = MarkdownInline.splitByBrPreserveFormatting(colText);
-                List<MarkdownInline.MdSegment> joined = MarkdownInline.joinLinesWithSingleSpace(sp);
-
-                if (isHeaderRow) {
-                    if (!joined.isEmpty()) {
-                        MarkdownInline.setResolvedSegmentsCell(wb, cell, joined, styles.tableHeaderStyle);
-                    } else {
-                        cell.setCellStyle(styles.tableHeaderStyle);
-                    }
-                } else {
-                    if (!joined.isEmpty()) {
-                        MarkdownInline.setResolvedSegmentsCell(wb, cell, joined, styles.tableBodyStyle);
-                    } else {
-                        cell.setCellStyle(styles.tableBodyStyle);
-                    }
-                }
-
+                cells.add(inner.substring(segStart, i));
                 segStart = i + 1;
             }
         }
 
-        return colIndex - 1;
+        return cells;
     }
 
     /**

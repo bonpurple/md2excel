@@ -36,12 +36,8 @@ public final class CellAppendUtil {
                     baseStyle);
         }
 
-        MarkdownInline.appendResolvedSegmentsToCell(wb, cell,
-                MarkdownInline.splitByBrPreserveFormatting(markdownText).lines.isEmpty()
-                        ? Collections.<MarkdownInline.MdSegment>emptyList()
-                        : MarkdownInline
-                                .joinLinesWithSingleSpace(MarkdownInline.splitByBrPreserveFormatting(markdownText)),
-                baseStyle, withLeadingSpace);
+        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments(markdownText);
+        MarkdownInline.appendResolvedSegmentsToCell(wb, cell, segments, baseStyle, withLeadingSpace);
     }
 
     // resolved segment

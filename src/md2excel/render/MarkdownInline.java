@@ -26,6 +26,10 @@ public final class MarkdownInline {
     private static final Map<Workbook, FontCache> FONT_CACHE = Collections
             .synchronizedMap(new WeakHashMap<Workbook, FontCache>());
 
+    // ParagraphBuffer と同じ値を使う
+    private static final char SOFT_BREAK_TOKEN = ParagraphBuffer.SOFT_BREAK_TOKEN;
+    private static final char HARD_BREAK_TOKEN = ParagraphBuffer.HARD_BREAK_TOKEN;
+
     private static final class FontCache {
         final Map<Short, MarkdownFonts> inlineFontsByBaseFontIndex = new HashMap<Short, MarkdownFonts>();
         final Map<Short, CodeBlockFonts> codeBlockFontsByStyleFontIndex = new HashMap<Short, CodeBlockFonts>();
@@ -197,26 +201,6 @@ public final class MarkdownInline {
         }
     }
 
-    // ** / * / _ / `code` のみ（~~ は CommonMark core 非対応なので文字列扱い）
-    public static void setMarkdownRichTextCell(Workbook workbook, Cell cell, String markdownText, CellStyle baseStyle) {
-        if (markdownText == null) {
-            markdownText = "";
-        }
-        List<MdSegment> segments = parseMarkdownToSegments(markdownText);
-        setResolvedSegmentsCell(workbook, cell, segments, baseStyle);
-    }
-
-    public static void appendMarkdownToCell(Workbook workbook, Cell cell, String markdownText, CellStyle baseStyle,
-            boolean withLeadingSpace) {
-
-        if (markdownText == null || markdownText.isEmpty()) {
-            return;
-        }
-
-        List<MdSegment> segments = parseMarkdownToSegments(markdownText);
-        appendResolvedSegmentsToCell(workbook, cell, segments, baseStyle, withLeadingSpace);
-    }
-
     // package-private: Renderer / Table / CellAppendUtil から使う
     static void setResolvedSegmentsCell(Workbook workbook, Cell cell, List<MdSegment> segments, CellStyle baseStyle) {
         if (segments == null) {
@@ -260,18 +244,65 @@ public final class MarkdownInline {
         cell.setCellValue(rich);
     }
 
-    private static List<MdSegment> parseMarkdownToSegments(String markdownText) {
-        return parseMarkdown(markdownText, false).segments;
+    // package-private: ParagraphUtil から呼ぶ
+    static List<List<MdSegment>> parseParagraphToDisplayLines(String paragraphText) {
+        if (paragraphText == null) {
+            paragraphText = "";
+        }
+
+        // 念のため、明示 <br> も paragraph の hard break token に寄せる
+        String normalized = normalizeParagraphText(paragraphText);
+
+        // paragraph 全体を 1 回だけ inline parse
+        return splitParagraphSegments(parseMarkdown(normalized));
     }
 
-    private static final class ParseResult {
-        final List<MdSegment> segments;
-        final String carryPrefix;
+    // package-private: render パッケージ内から使用
+    static List<MdSegment> parseParagraphToSingleLineSegments(String paragraphText) {
+        return joinDisplayLinesWithSingleSpace(parseParagraphToDisplayLines(paragraphText));
+    }
 
-        ParseResult(List<MdSegment> segments, String carryPrefix) {
-            this.segments = segments;
-            this.carryPrefix = carryPrefix;
+    private static List<MdSegment> joinDisplayLinesWithSingleSpace(List<List<MdSegment>> lines) {
+        List<MdSegment> out = new ArrayList<MdSegment>();
+        if (lines == null || lines.isEmpty()) {
+            return out;
         }
+
+        boolean hasPreviousNonEmptyLine = false;
+
+        for (int i = 0; i < lines.size(); i++) {
+            List<MdSegment> line = lines.get(i);
+            if (isEmptySegmentLine(line)) {
+                continue;
+            }
+
+            if (hasPreviousNonEmptyLine) {
+                addMergedSegment(out, " ", false, false, false);
+            }
+
+            for (int j = 0; j < line.size(); j++) {
+                MdSegment seg = line.get(j);
+                addMergedSegment(out, seg.text, seg.inBold, seg.inItalic, seg.inCode);
+            }
+
+            hasPreviousNonEmptyLine = true;
+        }
+
+        return out;
+    }
+
+    private static boolean isEmptySegmentLine(List<MdSegment> line) {
+        if (line == null || line.isEmpty()) {
+            return true;
+        }
+
+        for (int i = 0; i < line.size(); i++) {
+            MdSegment seg = line.get(i);
+            if (seg != null && seg.text != null && !seg.text.isEmpty()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static final class EmphasisState {
@@ -284,9 +315,9 @@ public final class MarkdownInline {
         }
     }
 
-    private static ParseResult parseMarkdown(String markdownText, boolean allowDanglingOpenCarry) {
+    private static List<MdSegment> parseMarkdown(String markdownText) {
         List<InlineToken> tokens = tokenizeAndResolveInline(markdownText);
-        return buildSegments(tokens, allowDanglingOpenCarry);
+        return buildSegments(tokens);
     }
 
     private static List<InlineToken> tokenizeAndResolveInline(String markdownText) {
@@ -399,7 +430,8 @@ public final class MarkdownInline {
     }
 
     private static boolean isUnicodeWhitespace(char ch) {
-        return Character.isWhitespace(ch) || Character.isSpaceChar(ch);
+        return ch == SOFT_BREAK_TOKEN || ch == HARD_BREAK_TOKEN || Character.isWhitespace(ch)
+                || Character.isSpaceChar(ch);
     }
 
     private static boolean isPunctuationChar(char ch) {
@@ -496,9 +528,8 @@ public final class MarkdownInline {
         return !bothMultipleOf3;
     }
 
-    private static ParseResult buildSegments(List<InlineToken> tokens, boolean allowDanglingOpenCarry) {
+    private static List<MdSegment> buildSegments(List<InlineToken> tokens) {
         List<MdSegment> out = new ArrayList<MdSegment>();
-        StringBuilder carry = new StringBuilder();
 
         EmphasisState state = new EmphasisState(0, 0);
 
@@ -518,7 +549,7 @@ public final class MarkdownInline {
             int pos = 0;
             for (DelimUse use : token.uses) {
                 if (use.start > pos) {
-                    consumeUnmatchedDelimiterRun(out, token, use.start - pos, state, carry, allowDanglingOpenCarry);
+                    consumeUnmatchedDelimiterRun(out, token, use.start - pos, state);
                 }
 
                 switch (use.kind) {
@@ -546,15 +577,15 @@ public final class MarkdownInline {
             }
 
             if (pos < token.originalLen) {
-                consumeUnmatchedDelimiterRun(out, token, token.originalLen - pos, state, carry, allowDanglingOpenCarry);
+                consumeUnmatchedDelimiterRun(out, token, token.originalLen - pos, state);
             }
         }
 
-        return new ParseResult(out, carry.toString());
+        return out;
     }
 
     private static void consumeUnmatchedDelimiterRun(List<MdSegment> out, InlineToken token, int len,
-            EmphasisState state, StringBuilder carry, boolean allowDanglingOpenCarry) {
+            EmphasisState state) {
 
         if (len <= 0) {
             return;
@@ -574,21 +605,7 @@ public final class MarkdownInline {
             }
         }
 
-        // opener としての carry は「行末 <br> で継続させたい時だけ」許可する
-        if (token.canOpen && allowDanglingOpenCarry) {
-            while (remaining >= 2) {
-                state.boldDepth++;
-                carry.append(token.marker).append(token.marker);
-                remaining -= 2;
-            }
-            while (remaining >= 1) {
-                state.italicDepth++;
-                carry.append(token.marker);
-                remaining--;
-            }
-        }
-
-        // 通常時の未解決 delimiter は文字として残す
+        // 未解決 delimiter は文字として残す
         if (remaining > 0) {
             addMergedSegment(out, repeatChar(token.marker, remaining), state.boldDepth > 0, state.italicDepth > 0,
                     false);
@@ -809,152 +826,101 @@ public final class MarkdownInline {
         cell.setCellValue(rich);
     }
 
-    public static void setMarkdownRichTextCell(RenderContext ctx, Cell cell, String markdownText, CellStyle baseStyle) {
-        setMarkdownRichTextCell(ctx.wb, cell, markdownText, baseStyle);
-    }
-
-    static final class BrSplitResult {
-        final List<List<MdSegment>> lines; // markdown文字列ではなく resolved segment 行
-        final boolean endsWithBr;
-        final String carryPrefix; // 行継続時に次行先頭へ補う未閉じ強調記号
-
-        BrSplitResult(List<List<MdSegment>> lines, boolean endsWithBr, String carryPrefix) {
-            this.lines = lines;
-            this.endsWithBr = endsWithBr;
-            this.carryPrefix = carryPrefix;
-        }
-    }
-
-    private static final class BrSplitAccumulator {
-        final List<List<MdSegment>> lines = new ArrayList<List<MdSegment>>();
-        final List<MdSegment> current = new ArrayList<MdSegment>();
-        boolean lastWasBr = false;
-    }
-
-    static BrSplitResult splitByBrPreserveFormatting(String markdownText) {
-        if (markdownText == null) {
-            markdownText = "";
-        }
-
-        boolean endsWithBr = endsWithBrOutsideInlineCode(markdownText);
-        ParseResult parsed = parseMarkdown(markdownText, endsWithBr);
-        return splitResolvedSegmentsByBr(parsed.segments, parsed.carryPrefix);
-    }
-
-    private static boolean endsWithBrOutsideInlineCode(String s) {
+    private static String normalizeParagraphText(String s) {
         if (s == null || s.isEmpty()) {
-            return false;
+            return "";
         }
 
-        int end = s.length();
-        while (end > 0 && Character.isWhitespace(s.charAt(end - 1))) {
-            end--;
-        }
-        if (end == 0) {
-            return false;
+        // 明示 <br> は paragraph hard break token に置換
+        return MdTextUtil.replaceBrOutsideInlineCode(s, String.valueOf(HARD_BREAK_TOKEN));
+    }
+
+    private static boolean isParagraphBreakToken(char ch) {
+        return ch == SOFT_BREAK_TOKEN || ch == HARD_BREAK_TOKEN;
+    }
+
+    private static String normalizeParagraphBreakTokensInCode(String s) {
+        if (s == null || s.isEmpty()) {
+            return s;
         }
 
-        boolean inCode = false;
-        int lastBrEnd = -1;
-
-        for (int i = 0; i < end;) {
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
             char ch = s.charAt(i);
-
-            if (ch == '`') {
-                inCode = !inCode;
-                i++;
-                continue;
+            if (ch == SOFT_BREAK_TOKEN || ch == HARD_BREAK_TOKEN) {
+                out.append(' ');
+            } else {
+                out.append(ch);
             }
-
-            if (!inCode) {
-                int brLen = MdTextUtil.matchBrTagLen(s, i);
-                if (brLen > 0) {
-                    lastBrEnd = i + brLen;
-                    i += brLen;
-                    continue;
-                }
-            }
-
-            i++;
         }
-
-        return lastBrEnd == end;
+        return out.toString();
     }
 
-    private static BrSplitResult splitResolvedSegmentsByBr(List<MdSegment> segments, String carryPrefix) {
-        BrSplitAccumulator acc = new BrSplitAccumulator();
+    private static List<List<MdSegment>> splitParagraphSegments(List<MdSegment> segments) {
+        List<List<MdSegment>> out = new ArrayList<List<MdSegment>>();
+        List<MdSegment> current = new ArrayList<MdSegment>();
 
-        for (MdSegment seg : segments) {
-            appendSegmentWithBrSplit(seg, acc);
-        }
-
-        if (!acc.current.isEmpty()) {
-            acc.lines.add(new ArrayList<MdSegment>(acc.current));
-            acc.current.clear();
-        }
-
-        return new BrSplitResult(acc.lines, acc.lastWasBr, carryPrefix);
-    }
-
-    private static void appendSegmentWithBrSplit(MdSegment seg, BrSplitAccumulator acc) {
-        if (seg == null || seg.text == null || seg.text.isEmpty()) {
-            return;
-        }
-
-        // インラインコード中の <br> は分割しない
-        if (seg.inCode) {
-            addMergedSegment(acc.current, seg.text, seg.inBold, seg.inItalic, true);
-            acc.lastWasBr = false;
-            return;
-        }
-
-        String text = seg.text;
-        int start = 0;
-
-        for (int i = 0; i < text.length();) {
-            int brLen = MdTextUtil.matchBrTagLen(text, i);
-            if (brLen > 0) {
-                if (i > start) {
-                    addMergedSegment(acc.current, text.substring(start, i), seg.inBold, seg.inItalic, false);
-                }
-                finishCurrentLineAtBr(acc);
-                i += brLen;
-                start = i;
-                continue;
-            }
-            i++;
-        }
-
-        if (start < text.length()) {
-            addMergedSegment(acc.current, text.substring(start), seg.inBold, seg.inItalic, false);
-            acc.lastWasBr = false;
-        }
-    }
-
-    private static void finishCurrentLineAtBr(BrSplitAccumulator acc) {
-        if (!acc.current.isEmpty()) {
-            acc.lines.add(new ArrayList<MdSegment>(acc.current));
-            acc.current.clear();
-        }
-        acc.lastWasBr = true;
-    }
-
-    static List<MdSegment> joinLinesWithSingleSpace(BrSplitResult sp) {
-        List<MdSegment> out = new ArrayList<MdSegment>();
-        if (sp == null || sp.lines.isEmpty()) {
+        if (segments == null || segments.isEmpty()) {
             return out;
         }
 
-        for (int i = 0; i < sp.lines.size(); i++) {
-            if (i > 0) {
-                addMergedSegment(out, " ", false, false, false);
+        boolean sawAny = false;
+        boolean lastEndedWithHardBreak = false;
+
+        for (MdSegment seg : segments) {
+            if (seg == null || seg.text == null || seg.text.isEmpty()) {
+                continue;
             }
 
-            List<MdSegment> line = sp.lines.get(i);
-            for (int j = 0; j < line.size(); j++) {
-                MdSegment seg = line.get(j);
-                addMergedSegment(out, seg.text, seg.inBold, seg.inItalic, seg.inCode);
+            sawAny = true;
+
+            // code span 内の paragraph break token は「表示改行」ではなく空白にする
+            if (seg.inCode) {
+                String codeText = normalizeParagraphBreakTokensInCode(seg.text);
+                addMergedSegment(current, codeText, seg.inBold, seg.inItalic, true);
+                lastEndedWithHardBreak = false;
+                continue;
             }
+
+            String text = seg.text;
+            int start = 0;
+
+            for (int i = 0; i < text.length(); i++) {
+                char ch = text.charAt(i);
+                if (!isParagraphBreakToken(ch)) {
+                    continue;
+                }
+
+                if (i > start) {
+                    addMergedSegment(current, text.substring(start, i), seg.inBold, seg.inItalic, false);
+                }
+
+                if (ch == SOFT_BREAK_TOKEN) {
+                    // soft break は 1 個の空白として扱う
+                    addMergedSegment(current, " ", seg.inBold, seg.inItalic, false);
+                    lastEndedWithHardBreak = false;
+                } else {
+                    // hard break は表示行を分ける
+                    out.add(new ArrayList<MdSegment>(current));
+                    current.clear();
+                    lastEndedWithHardBreak = true;
+                }
+
+                start = i + 1;
+            }
+
+            if (start < text.length()) {
+                addMergedSegment(current, text.substring(start), seg.inBold, seg.inItalic, false);
+                lastEndedWithHardBreak = false;
+            }
+        }
+
+        // 通常の最終行
+        if (!current.isEmpty()) {
+            out.add(new ArrayList<MdSegment>(current));
+        } else if (sawAny && lastEndedWithHardBreak) {
+            // 明示 <br> で終わった場合など、末尾空行も 1 行として保持
+            out.add(new ArrayList<MdSegment>());
         }
 
         return out;
@@ -973,15 +939,13 @@ public final class MarkdownInline {
     }
 
     public static boolean hasBrOutsideInlineCode(String markdownText) {
-        BrSplitResult sp = splitByBrPreserveFormatting(markdownText);
-        return sp.endsWithBr || sp.lines.size() >= 2;
+        return parseParagraphToDisplayLines(markdownText).size() >= 2;
     }
 
-    // 互換用。書式は落ちるので、新規コードでは joinLinesWithSingleSpace + setResolvedSegmentsCell
-    // を使うこと。
+    // 互換用。書式は落ちるので、新規コードでは parseParagraphToSingleLineSegments +
+    // setResolvedSegmentsCell を使うこと。
     public static String brToSingleSpace(String markdownText) {
-        BrSplitResult sp = splitByBrPreserveFormatting(markdownText);
-        return segmentsToPlainText(joinLinesWithSingleSpace(sp));
+        return segmentsToPlainText(parseParagraphToSingleLineSegments(markdownText));
     }
 
     private static int countBackticks(String text, int pos) {
@@ -1011,6 +975,10 @@ public final class MarkdownInline {
         if (code == null || code.isEmpty()) {
             return code;
         }
+
+        // paragraph 改行トークンは code span 内では空白に寄せる
+        code = normalizeParagraphBreakTokensInCode(code);
+
         int start = 0;
         int end = code.length();
         boolean leadingSpace = start < end && Character.isWhitespace(code.charAt(start));
