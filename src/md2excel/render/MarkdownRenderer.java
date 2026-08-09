@@ -463,6 +463,10 @@ public final class MarkdownRenderer {
             handleQuotedBlank(ctx, quoteStartCol);
             break;
 
+        case HEADING:
+            handleQuotedHeading(q, quoteStartCol, ctx);
+            break;
+
         case TABLE_SEPARATOR:
             ctx.st.afterSkipTableSeparatorLine();
             ctx.st.lastWasBlockQuote = true;
@@ -529,9 +533,7 @@ public final class MarkdownRenderer {
     private static void handleHeading(LineInfo li, RenderContext ctx) {
         ctx.st.ensureAutoBlankBeforeHeadingIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
 
-        CellStyle style = (li.headingLevel == 1) ? ctx.styles.heading1Style
-                : (li.headingLevel == 2) ? ctx.styles.heading2Style
-                        : (li.headingLevel == 3) ? ctx.styles.heading3Style : ctx.styles.heading4Style;
+        CellStyle style = resolveHeadingStyle(li.headingLevel, ctx);
 
         List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(li.headingText);
         if (lines.isEmpty()) {
@@ -590,6 +592,37 @@ public final class MarkdownRenderer {
         ctx.st.resetOnBlockBoundary();
         ctx.st.clearListContext();
         writeQuotedBlankRow(ctx, quoteStartCol);
+    }
+
+    private static void handleQuotedHeading(LineInfo q, int quoteStartCol, RenderContext ctx) {
+
+        CellStyle style = resolveHeadingStyle(q.headingLevel, ctx);
+
+        List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(q.headingText);
+
+        if (lines.isEmpty()) {
+            lines = Collections.<List<MarkdownInline.MdSegment>>singletonList(
+                    Collections.<MarkdownInline.MdSegment>emptyList());
+        }
+
+        for (int i = 0; i < lines.size(); i++) {
+            Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+
+            Cell cell = row.createCell(quoteStartCol);
+
+            MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, lines.get(i), style);
+
+            ctx.st.afterWriteQuotedHeading(quoteStartCol);
+
+            recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, quoteStartCol);
+        }
+    }
+
+    private static CellStyle resolveHeadingStyle(int headingLevel, RenderContext ctx) {
+
+        return (headingLevel == 1) ? ctx.styles.heading1Style
+                : (headingLevel == 2) ? ctx.styles.heading2Style
+                        : (headingLevel == 3) ? ctx.styles.heading3Style : ctx.styles.heading4Style;
     }
 
     private static void writeQuotedBlankRow(RenderContext ctx, int quoteStartCol) {

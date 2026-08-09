@@ -46,6 +46,7 @@ final class ParagraphUtil {
 
         switch (kind) {
         case BLANK:
+        case HEADING:
         case BULLET_ITEM:
         case NUMBER_ITEM:
         case TABLE_SEPARATOR:

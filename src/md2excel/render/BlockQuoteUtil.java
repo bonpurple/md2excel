@@ -75,12 +75,40 @@ public final class BlockQuoteUtil {
                 }
 
                 boolean isLeft = (c == startCol);
+
                 if (blankQuoteRow) {
                     cell.setCellStyle(isLeft ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
+
+                } else if (isLeft) {
+                    cell.setCellStyle(styles.blockQuoteLeftStyle);
+
                 } else {
-                    cell.setCellStyle(isLeft ? styles.blockQuoteLeftStyle : styles.blockQuoteBodyStyle);
+                    cell.setCellStyle(resolveBlockQuoteContentStyle(cell.getCellStyle(), styles));
                 }
             }
         }
+    }
+
+    private static CellStyle resolveBlockQuoteContentStyle(CellStyle currentStyle, MdStyle styles) {
+
+        int styleIndex = currentStyle.getIndex();
+
+        if (styleIndex == styles.heading1Style.getIndex() || styleIndex == styles.blockQuoteHeading1Style.getIndex()) {
+            return styles.blockQuoteHeading1Style;
+        }
+
+        if (styleIndex == styles.heading2Style.getIndex() || styleIndex == styles.blockQuoteHeading2Style.getIndex()) {
+            return styles.blockQuoteHeading2Style;
+        }
+
+        if (styleIndex == styles.heading3Style.getIndex() || styleIndex == styles.blockQuoteHeading3Style.getIndex()) {
+            return styles.blockQuoteHeading3Style;
+        }
+
+        if (styleIndex == styles.heading4Style.getIndex() || styleIndex == styles.blockQuoteHeading4Style.getIndex()) {
+            return styles.blockQuoteHeading4Style;
+        }
+
+        return styles.blockQuoteBodyStyle;
     }
 }

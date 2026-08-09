@@ -39,6 +39,10 @@ public final class MdStyle {
     public final CellStyle blockQuoteBodyStyle;
     public final CellStyle blockQuoteBlankLeftStyle;
     public final CellStyle blockQuoteBlankBodyStyle;
+    public final CellStyle blockQuoteHeading1Style;
+    public final CellStyle blockQuoteHeading2Style;
+    public final CellStyle blockQuoteHeading3Style;
+    public final CellStyle blockQuoteHeading4Style;
 
     // コードブロック枠線スタイル（mask で取り出す）
     // mask bit: 1=TOP, 2=BOTTOM, 4=LEFT, 8=RIGHT
@@ -162,6 +166,11 @@ public final class MdStyle {
         // 引用ブロック（通常行）
         XSSFColor codeBg = ((XSSFCellStyle) this.codeBlockStyle).getFillForegroundXSSFColor();
 
+        this.blockQuoteHeading1Style = createBlockQuoteContentStyle(wb, this.heading1Style, codeBg);
+        this.blockQuoteHeading2Style = createBlockQuoteContentStyle(wb, this.heading2Style, codeBg);
+        this.blockQuoteHeading3Style = createBlockQuoteContentStyle(wb, this.heading3Style, codeBg);
+        this.blockQuoteHeading4Style = createBlockQuoteContentStyle(wb, this.heading4Style, codeBg);
+
         XSSFCellStyle tableHeaderQuote = (XSSFCellStyle) wb.createCellStyle();
         tableHeaderQuote.cloneStyleFrom(this.tableHeaderStyle);
         if (codeBg != null) {
@@ -248,5 +257,19 @@ public final class MdStyle {
         if (mask == 0)
             return codeBlockStyle;
         return codeBlockFrameStyles[mask];
+    }
+
+    private static CellStyle createBlockQuoteContentStyle(Workbook wb, CellStyle baseStyle, XSSFColor background) {
+
+        XSSFCellStyle style = (XSSFCellStyle) wb.createCellStyle();
+
+        style.cloneStyleFrom(baseStyle);
+
+        if (background != null) {
+            style.setFillForegroundColor(background);
+            style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        }
+
+        return style;
     }
 }

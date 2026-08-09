@@ -509,4 +509,15 @@ final class RenderState {
         Row row = RowUtil.createRow(sheet, this, normalRowStyle);
         afterWriteAutoBlank(row.getRowNum());
     }
+
+    void afterWriteQuotedHeading(int col) {
+        apply(Tx.WRITE_HEADING, -1, -1, 0, false);
+
+        lastContentCol = col;
+
+        // 通常見出し用の「直後の通常段落」状態を引用外へ漏らさない。
+        inHeadingParagraphBlock = false;
+
+        lastWasBlockQuote = true;
+    }
 }
