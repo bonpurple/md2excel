@@ -16,7 +16,7 @@ public final class MarkdownTable {
 
     public static boolean isTableLine(String line) {
         String trimmed = line.trim();
-        return countPipesOutsideInlineCode(trimmed) >= 1;
+        return countUnescapedPipes(trimmed) >= 1;
     }
 
     public static boolean isTableSeparatorLine(String trimmed) {
@@ -45,6 +45,17 @@ public final class MarkdownTable {
 
     static TableRowRenderResult createTableRows(RenderContext ctx, String line, boolean isHeaderRow, int startCol) {
         List<String> rawCells = splitTableCells(line);
+        if (!isHeaderRow && ctx.st.currentTableEndCol >= startCol) {
+            int headerCellCount = ctx.st.currentTableEndCol - startCol + 1;
+
+            if (rawCells.size() > headerCellCount) {
+                rawCells = new ArrayList<String>(rawCells.subList(0, headerCellCount));
+            } else {
+                while (rawCells.size() < headerCellCount) {
+                    rawCells.add("");
+                }
+            }
+        }
 
         List<List<List<MarkdownInline.MdSegment>>> cellLines = new ArrayList<List<List<MarkdownInline.MdSegment>>>();
         int maxRowCount = 1;
@@ -131,15 +142,9 @@ public final class MarkdownTable {
 
         int segStart = 0;
         int n = inner.length();
-        boolean inCode = false;
 
         for (int i = 0; i <= n; i++) {
-            if (i < n && inner.charAt(i) == '`') {
-                inCode = !inCode;
-                continue;
-            }
-
-            if (i == n || (inner.charAt(i) == '|' && !inCode && !isEscapedPipe(inner, i))) {
+            if (i == n || (inner.charAt(i) == '|' && !isEscapedPipe(inner, i))) {
                 cells.add(inner.substring(segStart, i));
                 segStart = i + 1;
             }
@@ -161,18 +166,13 @@ public final class MarkdownTable {
         return (bs % 2) == 1;
     }
 
-    private static int countPipesOutsideInlineCode(String s) {
+    private static int countUnescapedPipes(String s) {
         if (s == null || s.isEmpty())
             return 0;
+
         int count = 0;
-        boolean inCode = false;
         for (int i = 0; i < s.length(); i++) {
-            char ch = s.charAt(i);
-            if (ch == '`') {
-                inCode = !inCode;
-                continue;
-            }
-            if (ch == '|' && !inCode && !isEscapedPipe(s, i)) {
+            if (s.charAt(i) == '|' && !isEscapedPipe(s, i)) {
                 count++;
             }
         }
