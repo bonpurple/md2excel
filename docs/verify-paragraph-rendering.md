@@ -37,6 +37,44 @@ bb` and **cc**
 
 ---
 
+## setext heading rendering
+
+### SH1 level 1 setext heading
+
+# setext h1
+
+### SH2 level 2 setext heading
+
+## setext h2
+
+### SH3 setext heading followed by normal paragraph
+
+## test
+
+## a
+
+b
+
+### SH4 multiline paragraph becomes setext heading
+
+foo
+bar
+---
+
+### SH5 standalone thematic break should remain horizontal rule
+
+before thematic break
+
+---
+
+after thematic break
+
+### SH6 setext heading with inline formatting
+
+## **bold** and *italic*
+
+---
+
 ## block quote paragraph
 
 ### Q1 quote soft break plain
