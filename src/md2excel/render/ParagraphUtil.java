@@ -308,6 +308,74 @@ final class ParagraphUtil {
         return p;
     }
 
+    static int getSetextHeadingLevel(ParagraphBuffer p, MarkdownRenderer.LineInfo li) {
+
+        if (p == null || li == null || p.isEmpty()) {
+            return 0;
+        }
+
+        // 今回は通常 paragraph の Setext 化だけを対象にする。
+        // 引用・リスト内はそれぞれの対応時に拡張する。
+        if (p.kind != ParagraphBuffer.Kind.NORMAL) {
+            return 0;
+        }
+
+        // CommonMark: heading content の先頭行は最大3スペース。
+        if (p.baseIndent > 3) {
+            return 0;
+        }
+
+        return parseSetextUnderlineLevel(li.raw);
+    }
+
+    private static int parseSetextUnderlineLevel(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return 0;
+        }
+
+        int n = raw.length();
+        int i = 0;
+        int leadingSpaces = 0;
+
+        while (i < n && raw.charAt(i) == ' ') {
+            leadingSpaces++;
+            if (leadingSpaces > 3) {
+                return 0;
+            }
+            i++;
+        }
+
+        // marker 前の tab は4-column境界になるので、
+        // この簡易判定では Setext underline としない。
+        if (i < n && raw.charAt(i) == '\t') {
+            return 0;
+        }
+
+        if (i >= n) {
+            return 0;
+        }
+
+        char marker = raw.charAt(i);
+        if (marker != '=' && marker != '-') {
+            return 0;
+        }
+
+        while (i < n && raw.charAt(i) == marker) {
+            i++;
+        }
+
+        // marker の後ろは space / tab のみ許可。
+        while (i < n) {
+            char ch = raw.charAt(i);
+            if (ch != ' ' && ch != '\t') {
+                return 0;
+            }
+            i++;
+        }
+
+        return marker == '=' ? 1 : 2;
+    }
+
     // ------------------------------------------------------------
     // flush helpers
     // ------------------------------------------------------------
@@ -422,6 +490,30 @@ final class ParagraphUtil {
         List<List<MarkdownInline.MdSegment>> out = new ArrayList<List<MarkdownInline.MdSegment>>();
         out.add(Collections.<MarkdownInline.MdSegment>emptyList());
         return out;
+    }
+
+    static void flushSetextHeading(ParagraphBuffer p, int headingLevel, RenderContext ctx) {
+
+        if (p == null || p.isEmpty()) {
+            return;
+        }
+
+        List<List<MarkdownInline.MdSegment>> lines = parseParagraphToDisplayLines(p.getParagraphText());
+
+        lines = prependPrefixToFirstLine(lines, p.firstLinePrefix);
+        lines = ensureAtLeastOneDisplayLine(lines);
+
+        CellStyle headingStyle = headingLevel == 1 ? ctx.styles.heading1Style : ctx.styles.heading2Style;
+
+        for (int i = 0; i < lines.size(); i++) {
+            Row row = (i == 0) ? createFirstRow(p, ctx) : RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+
+            writeLine(ctx, row, p.firstCol, headingStyle, lines.get(i));
+        }
+
+        // 通常の見出しと同じ状態にする。
+        // 次の通常段落開始時に自動空行が1行入る。
+        ctx.st.afterWriteHeading();
     }
 
     /**

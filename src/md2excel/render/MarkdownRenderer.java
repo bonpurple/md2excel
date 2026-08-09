@@ -277,6 +277,16 @@ public final class MarkdownRenderer {
             String rawLine = it.next();
             LineInfo li = LineInfo.parse(rawLine, st);
 
+            // Setext heading は直前の paragraph と現在行をセットで判定する。
+            // underline 行自体は Excel 行として出力しない。
+            int setextHeadingLevel = ParagraphUtil.getSetextHeadingLevel(para, li);
+
+            if (setextHeadingLevel > 0) {
+                ParagraphUtil.flushSetextHeading(para, setextHeadingLevel, ctx);
+                para = null;
+                continue;
+            }
+
             // まず open paragraph が継続できるか判定
             if (para != null && ParagraphUtil.canContinue(para, li)) {
                 ParagraphUtil.append(para, li);
