@@ -96,10 +96,14 @@ public final class MarkdownTable {
                         cell.setCellStyle(ctx.styles.tableHeaderStyle);
                     }
                 } else {
+                    boolean hasNextExpandedRow = rowOffset < maxRowCount - 1;
+
                     if (!segments.isEmpty()) {
-                        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, segments, ctx.styles.tableBodyStyle);
+                        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, segments,
+                                hasNextExpandedRow ? ctx.styles.tableBodyLastRowStyle : ctx.styles.tableBodyStyle);
                     } else {
-                        cell.setCellStyle(ctx.styles.tableBodyStyle);
+                        cell.setCellStyle(
+                                hasNextExpandedRow ? ctx.styles.tableBodyLastRowStyle : ctx.styles.tableBodyStyle);
                     }
                 }
 
