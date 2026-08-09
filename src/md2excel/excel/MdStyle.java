@@ -30,6 +30,10 @@ public final class MdStyle {
     public final CellStyle tableBodyStyle;
     public final CellStyle tableBodyLastRowStyle;
 
+    public final CellStyle tableHeaderQuoteStyle;
+    public final CellStyle tableBodyQuoteStyle;
+    public final CellStyle tableBodyLastRowQuoteStyle;
+
     // 引用ブロック
     public final CellStyle blockQuoteLeftStyle;
     public final CellStyle blockQuoteBodyStyle;
@@ -157,6 +161,30 @@ public final class MdStyle {
 
         // 引用ブロック（通常行）
         XSSFColor codeBg = ((XSSFCellStyle) this.codeBlockStyle).getFillForegroundXSSFColor();
+
+        XSSFCellStyle tableHeaderQuote = (XSSFCellStyle) wb.createCellStyle();
+        tableHeaderQuote.cloneStyleFrom(this.tableHeaderStyle);
+        if (codeBg != null) {
+            tableHeaderQuote.setFillForegroundColor(codeBg);
+            tableHeaderQuote.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        }
+        this.tableHeaderQuoteStyle = tableHeaderQuote;
+
+        XSSFCellStyle tableBodyQuote = (XSSFCellStyle) wb.createCellStyle();
+        tableBodyQuote.cloneStyleFrom(this.tableBodyStyle);
+        if (codeBg != null) {
+            tableBodyQuote.setFillForegroundColor(codeBg);
+            tableBodyQuote.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        }
+        this.tableBodyQuoteStyle = tableBodyQuote;
+
+        XSSFCellStyle tableBodyLastRowQuote = (XSSFCellStyle) wb.createCellStyle();
+        tableBodyLastRowQuote.cloneStyleFrom(this.tableBodyLastRowStyle);
+        if (codeBg != null) {
+            tableBodyLastRowQuote.setFillForegroundColor(codeBg);
+            tableBodyLastRowQuote.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        }
+        this.tableBodyLastRowQuoteStyle = tableBodyLastRowQuote;
 
         XSSFCellStyle quoteBody = (XSSFCellStyle) wb.createCellStyle();
         quoteBody.cloneStyleFrom(this.normalStyle);

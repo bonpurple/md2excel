@@ -1,6 +1,7 @@
 package md2excel.render;
 
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 
@@ -48,16 +49,27 @@ public final class BlockQuoteUtil {
             boolean tableQuoteRow = st.tableBlockQuoteRows.contains(r);
 
             for (int c = startCol; c <= fillEndCol; c++) {
-                // 引用内テーブルでは左の引用装飾だけ設定し、
-                // テーブルセル自身のスタイルは保持する。
-                if (tableQuoteRow && c != startCol) {
-                    continue;
-                }
-
                 Cell cell = rowObj.getCell(c);
                 if (cell == null) {
                     cell = rowObj.createCell(c);
                     cell.setBlank();
+                }
+
+                if (tableQuoteRow) {
+                    if (c == startCol) {
+                        cell.setCellStyle(styles.blockQuoteLeftStyle);
+                    } else {
+                        CellStyle currentStyle = cell.getCellStyle();
+
+                        if (currentStyle.getIndex() == styles.tableHeaderStyle.getIndex()) {
+                            cell.setCellStyle(styles.tableHeaderQuoteStyle);
+                        } else if (currentStyle.getIndex() == styles.tableBodyLastRowStyle.getIndex()) {
+                            cell.setCellStyle(styles.tableBodyLastRowQuoteStyle);
+                        } else if (currentStyle.getIndex() == styles.tableBodyStyle.getIndex()) {
+                            cell.setCellStyle(styles.tableBodyQuoteStyle);
+                        }
+                    }
+                    continue;
                 }
 
                 boolean isLeft = (c == startCol);
