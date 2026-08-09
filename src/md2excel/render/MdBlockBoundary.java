@@ -29,7 +29,7 @@ public final class MdBlockBoundary {
                 Action.CLEAR_LIST_CONTEXT)),
         BULLET_ITEM(actions(Action.CLOSE_BLOCK_QUOTE, Action.INSERT_AUTO_BLANK_IF_PREV_HEADING)),
         NUMBER_ITEM(actions(Action.CLOSE_BLOCK_QUOTE, Action.INSERT_AUTO_BLANK_IF_PREV_HEADING)),
-        TABLE_LINE(actions(Action.CLOSE_BLOCK_QUOTE, Action.RESET_PARAGRAPH));
+        TABLE_LINE(actions(Action.CLOSE_BLOCK_QUOTE, Action.INSERT_AUTO_BLANK_IF_PREV_HEADING, Action.RESET_PARAGRAPH));
 
         final EnumSet<Action> actions;
 
