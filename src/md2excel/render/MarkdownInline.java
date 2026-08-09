@@ -664,6 +664,7 @@ public final class MarkdownInline {
         Font italic = wb.createFont();
         italic.setFontName(base.getFontName());
         italic.setFontHeightInPoints(base.getFontHeightInPoints());
+        italic.setBold(baseBold);
         italic.setItalic(true);
 
         Font boldItalic = wb.createFont();
