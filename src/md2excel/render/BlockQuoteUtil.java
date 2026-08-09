@@ -13,10 +13,12 @@ public final class BlockQuoteUtil {
     public static void closeBlockQuoteIfOpen(Sheet sheet, MdStyle styles, RenderState st) {
         if (!st.inBlockQuote) {
             st.blankBlockQuoteRows.clear();
+            st.tableBlockQuoteRows.clear();
             return;
         }
         if (st.blockQuoteFirstRow < 0 || st.blockQuoteLastRow < 0) {
             st.blankBlockQuoteRows.clear();
+            st.tableBlockQuoteRows.clear();
             return;
         }
 
@@ -29,6 +31,7 @@ public final class BlockQuoteUtil {
         st.blockQuoteCellRow = -1;
         st.blockQuoteCellCol = -1;
         st.blankBlockQuoteRows.clear();
+        st.tableBlockQuoteRows.clear();
     }
 
     private static void applyBlockQuoteStyle(Sheet sheet, MdStyle styles, RenderState st, int firstRow, int lastRow,
@@ -42,8 +45,15 @@ public final class BlockQuoteUtil {
                 continue;
 
             boolean blankQuoteRow = st.blankBlockQuoteRows.contains(r);
+            boolean tableQuoteRow = st.tableBlockQuoteRows.contains(r);
 
             for (int c = startCol; c <= fillEndCol; c++) {
+                // 引用内テーブルでは左の引用装飾だけ設定し、
+                // テーブルセル自身のスタイルは保持する。
+                if (tableQuoteRow && c != startCol) {
+                    continue;
+                }
+
                 Cell cell = rowObj.getCell(c);
                 if (cell == null) {
                     cell = rowObj.createCell(c);

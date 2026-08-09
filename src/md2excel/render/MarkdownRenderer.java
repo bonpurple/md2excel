@@ -18,6 +18,8 @@ public final class MarkdownRenderer {
         BLANK,
         BULLET_ITEM,
         NUMBER_ITEM,
+        TABLE_SEPARATOR,
+        TABLE_ROW,
         NORMAL
     }
 
@@ -105,7 +107,12 @@ public final class MarkdownRenderer {
         }
 
         boolean isTableLike() {
-            return kind == LineKind.TABLE_SEPARATOR || kind == LineKind.TABLE_ROW;
+            if (kind == LineKind.TABLE_SEPARATOR || kind == LineKind.TABLE_ROW) {
+                return true;
+            }
+
+            return kind == LineKind.BLOCK_QUOTE && (quoteContentKind == QuoteContentKind.TABLE_SEPARATOR
+                    || quoteContentKind == QuoteContentKind.TABLE_ROW);
         }
 
         static LineInfo parse(String rawLine, RenderState st) {
@@ -220,6 +227,12 @@ public final class MarkdownRenderer {
 
             if (innerTrimmed.isEmpty()) {
                 return new QuotedContent(QuoteContentKind.BLANK, "", innerIndent, null, null);
+            }
+
+            if (MarkdownTable.isTableLine(innerRaw)) {
+                boolean separator = MarkdownTable.isTableSeparatorLine(innerTrimmed);
+                return new QuotedContent(separator ? QuoteContentKind.TABLE_SEPARATOR : QuoteContentKind.TABLE_ROW,
+                        innerRaw, innerIndent, null, null);
             }
 
             if (innerTrimmed.length() >= 2) {
@@ -486,6 +499,22 @@ public final class MarkdownRenderer {
             handleQuotedBlank(ctx, quoteStartCol);
             break;
 
+        case TABLE_SEPARATOR:
+            ctx.st.afterSkipTableSeparatorLine();
+            ctx.st.lastWasBlockQuote = true;
+            break;
+
+        case TABLE_ROW:
+            MarkdownTable.TableRowRenderResult rr = renderTableRow(li.quoteText, quoteStartCol, ctx);
+
+            for (int r = rr.firstRowNum; r <= rr.lastRowNum; r++) {
+                ctx.st.tableBlockQuoteRows.add(r);
+                recordQuotedRow(ctx, r, quoteStartCol, -1);
+            }
+
+            ctx.st.lastWasBlockQuote = true;
+            break;
+
         case NORMAL:
         case BULLET_ITEM:
         case NUMBER_ITEM:
@@ -502,10 +531,15 @@ public final class MarkdownRenderer {
     }
 
     private static void handleTableRow(LineInfo li, RenderContext ctx) {
+        renderTableRow(li.raw, calcBlockStartCol(li.indent, ctx.st), ctx);
+    }
+
+    private static MarkdownTable.TableRowRenderResult renderTableRow(String tableLine, int firstRowStartCol,
+            RenderContext ctx) {
 
         int tableStartCol;
         if (ctx.st.currentTableHeaderRow < 0) {
-            tableStartCol = calcBlockStartCol(li.indent, ctx.st);
+            tableStartCol = firstRowStartCol;
             ctx.st.currentTableStartCol = tableStartCol;
         } else {
             tableStartCol = ctx.st.currentTableStartCol;
@@ -513,7 +547,7 @@ public final class MarkdownRenderer {
 
         boolean isHeader = (ctx.st.currentTableHeaderRow < 0);
 
-        MarkdownTable.TableRowRenderResult rr = MarkdownTable.createTableRows(ctx, li.raw, isHeader, tableStartCol);
+        MarkdownTable.TableRowRenderResult rr = MarkdownTable.createTableRows(ctx, tableLine, isHeader, tableStartCol);
 
         if (isHeader) {
             ctx.st.currentTableHeaderRow = rr.firstRowNum;
@@ -531,6 +565,7 @@ public final class MarkdownRenderer {
         }
 
         ctx.st.afterWriteTableRow(tableStartCol);
+        return rr;
     }
 
     private static void handleHeading(LineInfo li, RenderContext ctx) {
