@@ -43,7 +43,6 @@ public final class MdStyle {
     public final CellStyle blockQuoteHeading2Style;
     public final CellStyle blockQuoteHeading3Style;
     public final CellStyle blockQuoteHeading4Style;
-    public final CellStyle blockQuoteHorizontalRuleLeftStyle;
     public final CellStyle blockQuoteHorizontalRuleBodyStyle;
 
     // コードブロック枠線スタイル（mask で取り出す）
@@ -216,20 +215,6 @@ public final class MdStyle {
         quoteLeft.setBorderColor(BorderSide.LEFT, blue);
         this.blockQuoteLeftStyle = quoteLeft;
 
-        XSSFCellStyle quoteHrBody = (XSSFCellStyle) wb.createCellStyle();
-
-        quoteHrBody.cloneStyleFrom(this.blockQuoteBodyStyle);
-        quoteHrBody.setBorderBottom(BorderStyle.HAIR);
-
-        this.blockQuoteHorizontalRuleBodyStyle = quoteHrBody;
-
-        XSSFCellStyle quoteHrLeft = (XSSFCellStyle) wb.createCellStyle();
-
-        quoteHrLeft.cloneStyleFrom(this.blockQuoteLeftStyle);
-        quoteHrLeft.setBorderBottom(BorderStyle.HAIR);
-
-        this.blockQuoteHorizontalRuleLeftStyle = quoteHrLeft;
-
         // 引用ブロック（空行用）
         XSSFCellStyle quoteBlankBody = (XSSFCellStyle) wb.createCellStyle();
         quoteBlankBody.cloneStyleFrom(this.blankRowStyle);
@@ -248,6 +233,13 @@ public final class MdStyle {
         quoteBlankLeft.setBorderLeft(BorderStyle.THICK);
         quoteBlankLeft.setBorderColor(BorderSide.LEFT, blue);
         this.blockQuoteBlankLeftStyle = quoteBlankLeft;
+
+        XSSFCellStyle quoteHrBody = (XSSFCellStyle) wb.createCellStyle();
+
+        quoteHrBody.cloneStyleFrom(this.blockQuoteBlankBodyStyle);
+        quoteHrBody.setBorderBottom(BorderStyle.HAIR);
+
+        this.blockQuoteHorizontalRuleBodyStyle = quoteHrBody;
     }
 
     private void initCodeBlockFrameStyles(Workbook wb) {

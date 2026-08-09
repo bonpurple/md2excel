@@ -63,8 +63,13 @@ public final class BlockQuoteUtil {
                 if (horizontalRuleQuoteRow) {
                     boolean isLeft = (c == startCol);
 
-                    cell.setCellStyle(isLeft ? styles.blockQuoteHorizontalRuleLeftStyle
-                            : styles.blockQuoteHorizontalRuleBodyStyle);
+                    if (isLeft) {
+                        // B列: 引用の左罫線だけ。水平線は付けない。
+                        cell.setCellStyle(styles.blockQuoteBlankLeftStyle);
+                    } else {
+                        // C列以降: 空行フォントサイズを維持して水平線を描画。
+                        cell.setCellStyle(styles.blockQuoteHorizontalRuleBodyStyle);
+                    }
 
                     continue;
                 }
