@@ -14,11 +14,13 @@ public final class BlockQuoteUtil {
     public static void closeBlockQuoteIfOpen(Sheet sheet, MdStyle styles, RenderState st) {
         if (!st.inBlockQuote) {
             st.blankBlockQuoteRows.clear();
+            st.horizontalRuleBlockQuoteRows.clear();
             st.tableBlockQuoteRows.clear();
             return;
         }
         if (st.blockQuoteFirstRow < 0 || st.blockQuoteLastRow < 0) {
             st.blankBlockQuoteRows.clear();
+            st.horizontalRuleBlockQuoteRows.clear();
             st.tableBlockQuoteRows.clear();
             return;
         }
@@ -46,6 +48,9 @@ public final class BlockQuoteUtil {
                 continue;
 
             boolean blankQuoteRow = st.blankBlockQuoteRows.contains(r);
+
+            boolean horizontalRuleQuoteRow = st.horizontalRuleBlockQuoteRows.contains(r);
+
             boolean tableQuoteRow = st.tableBlockQuoteRows.contains(r);
 
             for (int c = startCol; c <= fillEndCol; c++) {
@@ -53,6 +58,15 @@ public final class BlockQuoteUtil {
                 if (cell == null) {
                     cell = rowObj.createCell(c);
                     cell.setBlank();
+                }
+
+                if (horizontalRuleQuoteRow) {
+                    boolean isLeft = (c == startCol);
+
+                    cell.setCellStyle(isLeft ? styles.blockQuoteHorizontalRuleLeftStyle
+                            : styles.blockQuoteHorizontalRuleBodyStyle);
+
+                    continue;
                 }
 
                 if (tableQuoteRow) {

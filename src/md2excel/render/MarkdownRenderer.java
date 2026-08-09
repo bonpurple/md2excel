@@ -473,6 +473,10 @@ public final class MarkdownRenderer {
             handleQuotedBlank(ctx, quoteStartCol);
             break;
 
+        case HORIZONTAL_RULE:
+            handleQuotedHorizontalRule(ctx, quoteStartCol);
+            break;
+
         case HEADING:
             handleQuotedHeading(q, quoteStartCol, ctx);
             break;
@@ -599,9 +603,59 @@ public final class MarkdownRenderer {
     }
 
     private static void handleQuotedBlank(RenderContext ctx, int quoteStartCol) {
+
         ctx.st.resetOnBlockBoundary();
         ctx.st.clearListContext();
+
+        // 通常Markdown空行と同じく、
+        // 水平線直後の空行は Excel 行を増やさない。
+        if (ctx.st.lastRowType == RenderState.RowType.HORIZONTAL_RULE && ctx.st.lastWasBlockQuote) {
+
+            ctx.st.afterConsumeMarkdownBlankWithoutNewRow();
+            ctx.st.lastWasBlockQuote = true;
+            return;
+        }
+
         writeQuotedBlankRow(ctx, quoteStartCol);
+    }
+
+    private static void handleQuotedHorizontalRule(RenderContext ctx, int quoteStartCol) {
+
+        int previousRowNum = ctx.st.rowIndex - 1;
+
+        boolean reusePreviousQuotedBlank = ctx.st.lastRowType == RenderState.RowType.BLANK && previousRowNum >= 0
+                && ctx.st.blankBlockQuoteRows.contains(previousRowNum);
+
+        Row row;
+
+        if (reusePreviousQuotedBlank) {
+            row = ctx.sheet.getRow(previousRowNum);
+
+            if (row == null) {
+                row = ctx.sheet.createRow(previousRowNum);
+            }
+
+            // この行はもう「引用空行」ではなく引用水平線行。
+            ctx.st.blankBlockQuoteRows.remove(previousRowNum);
+
+        } else {
+            row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.blankRowStyle);
+
+            Cell cell = row.createCell(quoteStartCol);
+
+            MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, Collections.<MarkdownInline.MdSegment>emptyList(),
+                    ctx.styles.blankRowStyle);
+
+            recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, -1);
+        }
+
+        ctx.st.horizontalRuleBlockQuoteRows.add(row.getRowNum());
+
+        ctx.st.afterWriteHorizontalRule();
+
+        // afterWriteHorizontalRule() は通常水平線として
+        // lastWasBlockQuote=false にするので引用コンテキストへ戻す。
+        ctx.st.lastWasBlockQuote = true;
     }
 
     private static void handleQuotedHeading(LineInfo q, int quoteStartCol, RenderContext ctx) {

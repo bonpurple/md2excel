@@ -106,6 +106,7 @@ final class RenderState {
 
     final Set<Integer> blankBlockQuoteRows = new HashSet<Integer>();
     final Set<Integer> tableBlockQuoteRows = new HashSet<Integer>();
+    final Set<Integer> horizontalRuleBlockQuoteRows = new HashSet<Integer>();
 
     // =========================
     // 状態遷移をここ1か所に集約

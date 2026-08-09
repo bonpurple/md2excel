@@ -43,6 +43,8 @@ public final class MdStyle {
     public final CellStyle blockQuoteHeading2Style;
     public final CellStyle blockQuoteHeading3Style;
     public final CellStyle blockQuoteHeading4Style;
+    public final CellStyle blockQuoteHorizontalRuleLeftStyle;
+    public final CellStyle blockQuoteHorizontalRuleBodyStyle;
 
     // コードブロック枠線スタイル（mask で取り出す）
     // mask bit: 1=TOP, 2=BOTTOM, 4=LEFT, 8=RIGHT
@@ -213,6 +215,20 @@ public final class MdStyle {
         XSSFColor blue = new XSSFColor(new Color(0, 112, 192), null);
         quoteLeft.setBorderColor(BorderSide.LEFT, blue);
         this.blockQuoteLeftStyle = quoteLeft;
+
+        XSSFCellStyle quoteHrBody = (XSSFCellStyle) wb.createCellStyle();
+
+        quoteHrBody.cloneStyleFrom(this.blockQuoteBodyStyle);
+        quoteHrBody.setBorderBottom(BorderStyle.HAIR);
+
+        this.blockQuoteHorizontalRuleBodyStyle = quoteHrBody;
+
+        XSSFCellStyle quoteHrLeft = (XSSFCellStyle) wb.createCellStyle();
+
+        quoteHrLeft.cloneStyleFrom(this.blockQuoteLeftStyle);
+        quoteHrLeft.setBorderBottom(BorderStyle.HAIR);
+
+        this.blockQuoteHorizontalRuleLeftStyle = quoteHrLeft;
 
         // 引用ブロック（空行用）
         XSSFCellStyle quoteBlankBody = (XSSFCellStyle) wb.createCellStyle();
