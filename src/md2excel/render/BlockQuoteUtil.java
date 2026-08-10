@@ -13,19 +13,11 @@ public final class BlockQuoteUtil {
 
     public static void closeBlockQuoteIfOpen(Sheet sheet, MdStyle styles, RenderState st) {
         if (!st.inBlockQuote) {
-            st.blankBlockQuoteRows.clear();
-            st.horizontalRuleBlockQuoteRows.clear();
-            st.tableBlockQuoteRows.clear();
-            st.codeBlockQuoteRows.clear();
-            st.blockQuoteDepthByRow.clear();
+            st.clearBlockQuoteRows();
             return;
         }
         if (st.blockQuoteFirstRow < 0 || st.blockQuoteLastRow < 0) {
-            st.blankBlockQuoteRows.clear();
-            st.horizontalRuleBlockQuoteRows.clear();
-            st.tableBlockQuoteRows.clear();
-            st.codeBlockQuoteRows.clear();
-            st.blockQuoteDepthByRow.clear();
+            st.clearBlockQuoteRows();
             return;
         }
 
@@ -38,11 +30,7 @@ public final class BlockQuoteUtil {
         st.blockQuoteCellRow = -1;
         st.blockQuoteCellCol = -1;
 
-        st.blankBlockQuoteRows.clear();
-        st.horizontalRuleBlockQuoteRows.clear();
-        st.tableBlockQuoteRows.clear();
-        st.codeBlockQuoteRows.clear();
-        st.blockQuoteDepthByRow.clear();
+        st.clearBlockQuoteRows();
     }
 
     private static void applyBlockQuoteStyle(Sheet sheet, MdStyle styles, RenderState st, int firstRow, int lastRow,
@@ -52,79 +40,103 @@ public final class BlockQuoteUtil {
 
         for (int r = firstRow; r <= lastRow; r++) {
             Row rowObj = sheet.getRow(r);
-            if (rowObj == null)
+
+            if (rowObj == null) {
                 continue;
+            }
 
-            boolean blankQuoteRow = st.blankBlockQuoteRows.contains(r);
+            RenderState.QuoteRowInfo quoteRowInfo = st.getBlockQuoteRowInfo(r);
 
-            boolean horizontalRuleQuoteRow = st.horizontalRuleBlockQuoteRows.contains(r);
+            RenderState.QuoteRowKind quoteRowKind = quoteRowInfo == null ? RenderState.QuoteRowKind.NORMAL
+                    : quoteRowInfo.kind;
 
-            boolean tableQuoteRow = st.tableBlockQuoteRows.contains(r);
-
-            boolean codeBlockQuoteRow = st.codeBlockQuoteRows.contains(r);
-
-            Integer depthValue = st.blockQuoteDepthByRow.get(r);
-
-            int quoteDepth = (depthValue == null) ? 1 : Math.max(1, depthValue.intValue());
+            int quoteDepth = quoteRowInfo == null ? 1 : quoteRowInfo.depth;
 
             for (int c = startCol; c <= fillEndCol; c++) {
                 Cell cell = rowObj.getCell(c);
+
                 if (cell == null) {
                     cell = rowObj.createCell(c);
                     cell.setBlank();
                 }
 
-                if (codeBlockQuoteRow) {
+                // ----------------------------------------
+                // code
+                // ----------------------------------------
+                if (quoteRowKind == RenderState.QuoteRowKind.CODE) {
+
                     if (c == startCol) {
-                        // 引用装飾列だけ引用スタイルを適用する。
                         cell.setCellStyle(styles.blockQuoteLeftStyle);
                     }
 
-                    // C列以降にはすでに codeBlockFrameStyle が設定されているため、
-                    // BlockQuoteUtil 側では何も変更しない。
+                    // codeBlockFrameStyle は維持する。
                     continue;
                 }
 
-                if (horizontalRuleQuoteRow) {
-                    boolean isLeft = (c == startCol);
+                // ----------------------------------------
+                // horizontal rule
+                // ----------------------------------------
+                if (quoteRowKind == RenderState.QuoteRowKind.HORIZONTAL_RULE) {
 
-                    if (isLeft) {
-                        // B列: 引用の左罫線だけ。水平線は付けない。
+                    if (c == startCol) {
                         cell.setCellStyle(styles.blockQuoteBlankLeftStyle);
                     } else {
-                        // C列以降: 空行フォントサイズを維持して水平線を描画。
                         cell.setCellStyle(styles.blockQuoteHorizontalRuleBodyStyle);
                     }
 
                     continue;
                 }
 
-                if (tableQuoteRow) {
+                // ----------------------------------------
+                // table
+                // ----------------------------------------
+                if (quoteRowKind == RenderState.QuoteRowKind.TABLE) {
+
                     if (c == startCol) {
                         cell.setCellStyle(styles.blockQuoteLeftStyle);
+
                     } else {
                         CellStyle currentStyle = cell.getCellStyle();
 
                         if (currentStyle.getIndex() == styles.tableHeaderStyle.getIndex()) {
+
                             cell.setCellStyle(styles.tableHeaderQuoteStyle);
+
                         } else if (currentStyle.getIndex() == styles.tableBodyLastRowStyle.getIndex()) {
+
                             cell.setCellStyle(styles.tableBodyLastRowQuoteStyle);
+
                         } else if (currentStyle.getIndex() == styles.tableBodyStyle.getIndex()) {
+
                             cell.setCellStyle(styles.tableBodyQuoteStyle);
+
                         } else {
                             cell.setCellStyle(styles.blockQuoteBodyStyle);
                         }
                     }
+
                     continue;
                 }
 
+                // ----------------------------------------
+                // blank
+                // ----------------------------------------
+                if (quoteRowKind == RenderState.QuoteRowKind.BLANK) {
+
+                    boolean isQuoteDecorCol = c >= startCol && c < startCol + quoteDepth;
+
+                    cell.setCellStyle(
+                            isQuoteDecorCol ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
+
+                    continue;
+                }
+
+                // ----------------------------------------
+                // normal / heading / list
+                // ----------------------------------------
                 boolean isQuoteDecorCol = c >= startCol && c < startCol + quoteDepth;
 
-                if (blankQuoteRow) {
-                    cell.setCellStyle(
-                            c == startCol ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
-
-                } else if (isQuoteDecorCol) {
+                if (isQuoteDecorCol) {
                     cell.setCellStyle(styles.blockQuoteLeftStyle);
 
                 } else {

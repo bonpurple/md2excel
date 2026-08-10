@@ -423,18 +423,23 @@ final class ParagraphUtil {
         case QUOTE_NORMAL:
             ctx.st.afterWriteNormalText(rowNum, p.firstCol, p.baseIndent, false);
 
-            recordQuotedRow(ctx, rowNum, p.quoteStartCol, p.firstCol, p.quoteDepth);
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, p.firstCol, RenderState.QuoteRowKind.NORMAL,
+                    p.quoteDepth);
 
             break;
 
         case QUOTE_BULLET:
             ctx.st.afterWriteBulletItem(rowNum, p.firstCol);
-            recordQuotedRow(ctx, rowNum, p.quoteStartCol, -1);
+
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, -1, RenderState.QuoteRowKind.NORMAL);
+
             break;
 
         case QUOTE_NUMBER:
             ctx.st.afterWriteNumberedItem(p.baseIndent, p.firstCol);
-            recordQuotedRow(ctx, rowNum, p.quoteStartCol, -1);
+
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, -1, RenderState.QuoteRowKind.NORMAL);
+
             break;
 
         default:
@@ -453,14 +458,16 @@ final class ParagraphUtil {
         case QUOTE_NORMAL:
             ctx.st.afterWriteNormalText(rowNum, col, p.baseIndent, false);
 
-            recordQuotedRow(ctx, rowNum, p.quoteStartCol, col, p.quoteDepth);
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, col, RenderState.QuoteRowKind.NORMAL, p.quoteDepth);
 
             break;
 
         case QUOTE_BULLET:
         case QUOTE_NUMBER:
             ctx.st.afterWriteNormalText(rowNum, col, p.baseIndent, false);
-            recordQuotedRow(ctx, rowNum, p.quoteStartCol, -1);
+
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, -1, RenderState.QuoteRowKind.NORMAL);
+
             break;
 
         default:
@@ -595,9 +602,7 @@ final class ParagraphUtil {
         MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, Collections.<MarkdownInline.MdSegment>emptyList(),
                 ctx.styles.blankRowStyle);
 
-        ctx.st.blankBlockQuoteRows.add(row.getRowNum());
-
-        recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, -1);
+        ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, RenderState.QuoteRowKind.BLANK);
 
         ctx.st.lastRowType = RenderState.RowType.BLANK;
         ctx.st.lastLineWasTable = false;
@@ -612,42 +617,6 @@ final class ParagraphUtil {
         ctx.st.lastNormalRowIndex = -1;
         ctx.st.lastNormalIndent = -1;
         ctx.st.bulletDetailActive = false;
-        ctx.st.lastWasBlockQuote = true;
-    }
-
-    private static void recordQuotedRow(RenderContext ctx, int rowNum, int quoteStartCol, int appendCellCol) {
-
-        recordQuotedRow(ctx, rowNum, quoteStartCol, appendCellCol, 1);
-    }
-
-    private static void recordQuotedRow(RenderContext ctx, int rowNum, int quoteStartCol, int appendCellCol,
-            int quoteDepth) {
-
-        int quoteDecorCol = clampCol(quoteStartCol - 1, ctx.st);
-
-        if (!ctx.st.inBlockQuote || ctx.st.blockQuoteFirstRow < 0) {
-
-            ctx.st.inBlockQuote = true;
-            ctx.st.blockQuoteFirstRow = rowNum;
-            ctx.st.blockQuoteCol = quoteDecorCol;
-        }
-
-        if (quoteDecorCol < ctx.st.blockQuoteCol) {
-            ctx.st.blockQuoteCol = quoteDecorCol;
-        }
-
-        ctx.st.blockQuoteLastRow = rowNum;
-
-        ctx.st.blockQuoteDepthByRow.put(rowNum, Math.max(1, quoteDepth));
-
-        if (appendCellCol >= 0) {
-            ctx.st.blockQuoteCellRow = rowNum;
-            ctx.st.blockQuoteCellCol = appendCellCol;
-        } else {
-            ctx.st.blockQuoteCellRow = -1;
-            ctx.st.blockQuoteCellCol = -1;
-        }
-
         ctx.st.lastWasBlockQuote = true;
     }
 

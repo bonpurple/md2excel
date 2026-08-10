@@ -2,10 +2,8 @@ package md2excel.render;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
@@ -73,8 +71,6 @@ final class RenderState {
     boolean codeBlockInBlockQuote = false;
     int codeBlockQuoteStartCol = -1;
 
-    final Set<Integer> codeBlockQuoteRows = new HashSet<Integer>();
-
     // 開始コードフェンス情報
     char codeFenceMarker = '\0';
     int codeFenceLength = 0;
@@ -110,12 +106,6 @@ final class RenderState {
     int bulletDetailRow = -1;
     int bulletDetailCol = -1;
 
-    final Set<Integer> blankBlockQuoteRows = new HashSet<Integer>();
-    final Set<Integer> tableBlockQuoteRows = new HashSet<Integer>();
-    final Set<Integer> horizontalRuleBlockQuoteRows = new HashSet<Integer>();
-
-    final Map<Integer, Integer> blockQuoteDepthByRow = new HashMap<Integer, Integer>();
-
     // =========================
     // 状態遷移をここ1か所に集約
     // =========================
@@ -137,6 +127,30 @@ final class RenderState {
 
         WRITE_NORMAL_TEXT
     }
+
+    enum QuoteRowKind {
+        NORMAL,
+        BLANK,
+        HORIZONTAL_RULE,
+        TABLE,
+        CODE
+    }
+
+    static final class QuoteRowInfo {
+
+        final QuoteRowKind kind;
+        final int depth;
+        final int contentCol;
+
+        QuoteRowInfo(QuoteRowKind kind, int depth, int contentCol) {
+
+            this.kind = kind;
+            this.depth = Math.max(1, depth);
+            this.contentCol = contentCol;
+        }
+    }
+
+    final Map<Integer, QuoteRowInfo> blockQuoteRows = new HashMap<Integer, QuoteRowInfo>();
 
     RenderState(int mergeCols) {
         this(mergeCols, 0, 0);
@@ -404,6 +418,48 @@ final class RenderState {
         codeBlockLastRow = rowNum;
     }
 
+    void recordBlockQuoteRow(int rowNum, int quoteStartCol, int contentCol, QuoteRowKind kind, int depth) {
+
+        int quoteDecorCol = quoteStartCol - 1;
+
+        if (quoteDecorCol < 0) {
+            quoteDecorCol = 0;
+        }
+
+        if (quoteDecorCol >= mergeLastCol) {
+            quoteDecorCol = mergeLastCol - 1;
+        }
+
+        if (!inBlockQuote || blockQuoteFirstRow < 0) {
+            inBlockQuote = true;
+            blockQuoteFirstRow = rowNum;
+            blockQuoteCol = quoteDecorCol;
+        }
+
+        if (quoteDecorCol < blockQuoteCol) {
+            blockQuoteCol = quoteDecorCol;
+        }
+
+        blockQuoteLastRow = rowNum;
+
+        blockQuoteRows.put(Integer.valueOf(rowNum), new QuoteRowInfo(kind, depth, contentCol));
+
+        if (contentCol >= 0) {
+            blockQuoteCellRow = rowNum;
+            blockQuoteCellCol = contentCol;
+        } else {
+            blockQuoteCellRow = -1;
+            blockQuoteCellCol = -1;
+        }
+
+        lastWasBlockQuote = true;
+    }
+
+    void recordBlockQuoteRow(int rowNum, int quoteStartCol, int contentCol, QuoteRowKind kind) {
+
+        recordBlockQuoteRow(rowNum, quoteStartCol, contentCol, kind, 1);
+    }
+
     void afterWriteBulletItem(int rowNum, int col) {
         apply(Tx.WRITE_BULLET_ITEM, rowNum, col, 0, false);
     }
@@ -528,5 +584,20 @@ final class RenderState {
         inHeadingParagraphBlock = false;
 
         lastWasBlockQuote = true;
+    }
+
+    QuoteRowInfo getBlockQuoteRowInfo(int rowNum) {
+        return blockQuoteRows.get(Integer.valueOf(rowNum));
+    }
+
+    boolean isBlockQuoteRowKind(int rowNum, QuoteRowKind kind) {
+
+        QuoteRowInfo info = getBlockQuoteRowInfo(rowNum);
+
+        return info != null && info.kind == kind;
+    }
+
+    void clearBlockQuoteRows() {
+        blockQuoteRows.clear();
     }
 }
