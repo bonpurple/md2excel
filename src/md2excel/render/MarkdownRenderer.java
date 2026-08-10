@@ -90,14 +90,17 @@ public final class MarkdownRenderer {
 
             // コードブロック中だけは最優先。
             if (st.inCodeBlock) {
-                if (MdTextUtil.isClosingCodeFenceLine(trimmed, st.codeFenceMarker, st.codeFenceLength)) {
 
-                    return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, false, null, null,
-                            null, null);
+                // 引用内コードブロックでは、まず引用 marker を1段剥がす。
+                if (st.codeBlockInBlockQuote && trimmed.startsWith(">")) {
+                    String innerRaw = stripOneQuoteMarker(rawLine);
+                    LineInfo inner = parseCodeBlockContent(innerRaw, st);
+
+                    return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null,
+                            inner.endsWithHardBreak, null, null, null, inner);
                 }
 
-                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_LINE, -1, null, false, null, null, null,
-                        null);
+                return parseCodeBlockContent(rawLine, st);
             }
 
             // 引用は外側のコンテキストとして扱い、
@@ -111,6 +114,20 @@ public final class MarkdownRenderer {
             }
 
             return parseContent(rawLine);
+        }
+
+        private static LineInfo parseCodeBlockContent(String rawLine, RenderState st) {
+
+            String trimmed = rawLine.trim();
+            int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
+
+            if (MdTextUtil.isClosingCodeFenceLine(trimmed, st.codeFenceMarker, st.codeFenceLength)) {
+
+                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, false, null, null, null,
+                        null);
+            }
+
+            return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_LINE, -1, null, false, null, null, null, null);
         }
 
         /**
@@ -369,6 +386,8 @@ public final class MarkdownRenderer {
             ctx.st.codeBlockLastRow = -1;
             ctx.st.codeBlockCol = 0;
             ctx.st.codeBlockBaseIndent = -1;
+            ctx.st.codeBlockInBlockQuote = false;
+            ctx.st.codeBlockQuoteStartCol = -1;
             return;
         }
 
@@ -457,9 +476,6 @@ public final class MarkdownRenderer {
 
     private static void handleBlockQuote(LineInfo li, RenderContext ctx) {
 
-        ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.blankRowStyle);
-        ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
-
         int quoteStartCol = calcQuoteStartCol(li.indent, ctx.st);
 
         LineInfo q = li.quotedContent;
@@ -467,6 +483,35 @@ public final class MarkdownRenderer {
         if (q == null) {
             throw new AssertionError("Quoted content is missing");
         }
+
+        // すでに引用内コードブロック中なら、
+        // 通常の block quote 前後処理を通さない。
+        if (ctx.st.codeBlockInBlockQuote) {
+
+            switch (q.kind) {
+            case CODE_LINE:
+                handleQuotedCodeLine(q, quoteStartCol, ctx);
+                return;
+
+            case CODE_FENCE:
+                handleQuotedCodeFence(q, quoteStartCol, ctx);
+                return;
+
+            default:
+                throw new AssertionError("Unexpected line inside quoted code block: " + q.kind);
+            }
+        }
+
+        // quoted code の直後に明示的な `>` 空行がある場合、
+        // code block 用の自動空行は追加しない。
+        boolean explicitBlankAfterQuotedCode = q.kind == LineKind.BLANK
+                && ctx.st.lastContentType == RenderState.ContentType.CODE && ctx.st.lastWasBlockQuote;
+
+        if (!explicitBlankAfterQuotedCode) {
+            ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.blankRowStyle);
+        }
+
+        ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
 
         switch (q.kind) {
         case BLANK:
@@ -479,6 +524,10 @@ public final class MarkdownRenderer {
 
         case HEADING:
             handleQuotedHeading(q, quoteStartCol, ctx);
+            break;
+
+        case CODE_FENCE:
+            handleQuotedCodeFence(q, quoteStartCol, ctx);
             break;
 
         case TABLE_SEPARATOR:
@@ -680,6 +729,74 @@ public final class MarkdownRenderer {
 
             recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, quoteStartCol);
         }
+    }
+
+    private static void handleQuotedCodeFence(LineInfo q, int quoteStartCol, RenderContext ctx) {
+
+        // 開始
+        if (!ctx.st.inCodeBlock) {
+            ctx.st.currentCodeBlockIndent = q.indent;
+
+            ctx.st.codeFenceMarker = MdTextUtil.getCodeFenceMarker(q.trimmed);
+
+            ctx.st.codeFenceLength = MdTextUtil.getCodeFenceLength(q.trimmed);
+
+            ctx.st.inCodeBlock = true;
+            ctx.st.codeBlockInBlockQuote = true;
+            ctx.st.codeBlockQuoteStartCol = quoteStartCol;
+
+            ctx.st.lastLineWasTable = false;
+
+            ctx.st.codeBlockFirstRow = -1;
+            ctx.st.codeBlockLastRow = -1;
+            ctx.st.codeBlockCol = 0;
+            ctx.st.codeBlockBaseIndent = -1;
+
+            ctx.st.lastWasBlockQuote = true;
+            return;
+        }
+
+        // 終了処理・コード枠生成は既存処理を流用する。
+        handleCodeFence(q, ctx);
+
+        ctx.st.codeBlockInBlockQuote = false;
+        ctx.st.codeBlockQuoteStartCol = -1;
+
+        // handleCodeFence() は通常コードブロックとして終了するため、
+        // quote context だけ戻す。
+        ctx.st.lastWasBlockQuote = true;
+    }
+
+    private static void handleQuotedCodeLine(LineInfo q, int quoteStartCol, RenderContext ctx) {
+
+        Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.CODE_LINE,
+                ctx.styles.normalStyle);
+
+        // B列: quote decoration
+        // C列: code block frame
+        // D列: code text
+        int frameStartCol = quoteStartCol;
+        int codeCol = clampCol(frameStartCol + 1, ctx.st);
+
+        int leadingSpaces = q.indent;
+        int trimSpaces = ctx.st.computeCodeTrimSpaces(leadingSpaces);
+
+        String codeLine = q.raw.substring(trimSpaces);
+
+        Cell cell = row.createCell(codeCol);
+
+        MarkdownInline.setCodeBlockRichTextCell(ctx.wb, cell, codeLine, ctx.styles.codeBlockStyle);
+
+        ctx.st.recordCodeBlockLinePos(row.getRowNum(), frameStartCol);
+
+        // 引用終了時にコードstyleを上書きしないため記録。
+        ctx.st.codeBlockQuoteRows.add(row.getRowNum());
+
+        ctx.st.afterWriteCodeLine(codeCol);
+
+        recordQuotedRow(ctx, row.getRowNum(), quoteStartCol, -1);
+
+        ctx.st.lastWasBlockQuote = true;
     }
 
     private static CellStyle resolveHeadingStyle(int headingLevel, RenderContext ctx) {

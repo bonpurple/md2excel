@@ -16,12 +16,14 @@ public final class BlockQuoteUtil {
             st.blankBlockQuoteRows.clear();
             st.horizontalRuleBlockQuoteRows.clear();
             st.tableBlockQuoteRows.clear();
+            st.codeBlockQuoteRows.clear();
             return;
         }
         if (st.blockQuoteFirstRow < 0 || st.blockQuoteLastRow < 0) {
             st.blankBlockQuoteRows.clear();
             st.horizontalRuleBlockQuoteRows.clear();
             st.tableBlockQuoteRows.clear();
+            st.codeBlockQuoteRows.clear();
             return;
         }
 
@@ -33,8 +35,11 @@ public final class BlockQuoteUtil {
         st.blockQuoteLastRow = -1;
         st.blockQuoteCellRow = -1;
         st.blockQuoteCellCol = -1;
+
         st.blankBlockQuoteRows.clear();
+        st.horizontalRuleBlockQuoteRows.clear();
         st.tableBlockQuoteRows.clear();
+        st.codeBlockQuoteRows.clear();
     }
 
     private static void applyBlockQuoteStyle(Sheet sheet, MdStyle styles, RenderState st, int firstRow, int lastRow,
@@ -53,11 +58,24 @@ public final class BlockQuoteUtil {
 
             boolean tableQuoteRow = st.tableBlockQuoteRows.contains(r);
 
+            boolean codeBlockQuoteRow = st.codeBlockQuoteRows.contains(r);
+
             for (int c = startCol; c <= fillEndCol; c++) {
                 Cell cell = rowObj.getCell(c);
                 if (cell == null) {
                     cell = rowObj.createCell(c);
                     cell.setBlank();
+                }
+
+                if (codeBlockQuoteRow) {
+                    if (c == startCol) {
+                        // 引用装飾列だけ引用スタイルを適用する。
+                        cell.setCellStyle(styles.blockQuoteLeftStyle);
+                    }
+
+                    // C列以降にはすでに codeBlockFrameStyle が設定されているため、
+                    // BlockQuoteUtil 側では何も変更しない。
+                    continue;
                 }
 
                 if (horizontalRuleQuoteRow) {

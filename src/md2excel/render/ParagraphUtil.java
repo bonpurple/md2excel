@@ -48,6 +48,8 @@ final class ParagraphUtil {
         case BLANK:
         case HORIZONTAL_RULE:
         case HEADING:
+        case CODE_FENCE:
+        case CODE_LINE:
         case BULLET_ITEM:
         case NUMBER_ITEM:
         case TABLE_SEPARATOR:

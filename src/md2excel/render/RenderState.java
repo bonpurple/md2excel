@@ -68,6 +68,10 @@ final class RenderState {
     int codeBlockLastRow = -1;
     int codeBlockCol = 0;
     int currentCodeBlockIndent = 0;
+    boolean codeBlockInBlockQuote = false;
+    int codeBlockQuoteStartCol = -1;
+
+    final Set<Integer> codeBlockQuoteRows = new HashSet<Integer>();
 
     // 開始コードフェンス情報
     char codeFenceMarker = '\0';
