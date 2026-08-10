@@ -697,6 +697,10 @@ final class ParagraphUtil {
             return "";
         }
 
+        if (q.kind == MarkdownRenderer.LineKind.BLOCK_QUOTE) {
+            return quotedNormalText(q.quotedContent);
+        }
+
         if (q.kind == MarkdownRenderer.LineKind.NORMAL) {
             return q.paragraphText;
         }

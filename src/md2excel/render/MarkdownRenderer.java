@@ -138,6 +138,16 @@ public final class MarkdownRenderer {
             int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
             boolean endsWithHardBreak = hasLineEndHardBreak(rawLine);
 
+            // block quote は container なので、
+            // 内側も同じ classifier で再帰的に解析する。
+            if (trimmed.startsWith(">")) {
+                String innerRaw = stripOneQuoteMarker(rawLine);
+                LineInfo inner = parseContent(innerRaw);
+
+                return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, inner.endsWithHardBreak,
+                        null, null, null, inner);
+            }
+
             // code fence
             if (MdTextUtil.isOpeningCodeFenceLine(trimmed)) {
                 return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, false, null, null, null,
