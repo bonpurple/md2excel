@@ -17,6 +17,7 @@ public final class BlockQuoteUtil {
             st.horizontalRuleBlockQuoteRows.clear();
             st.tableBlockQuoteRows.clear();
             st.codeBlockQuoteRows.clear();
+            st.blockQuoteDepthByRow.clear();
             return;
         }
         if (st.blockQuoteFirstRow < 0 || st.blockQuoteLastRow < 0) {
@@ -24,6 +25,7 @@ public final class BlockQuoteUtil {
             st.horizontalRuleBlockQuoteRows.clear();
             st.tableBlockQuoteRows.clear();
             st.codeBlockQuoteRows.clear();
+            st.blockQuoteDepthByRow.clear();
             return;
         }
 
@@ -40,6 +42,7 @@ public final class BlockQuoteUtil {
         st.horizontalRuleBlockQuoteRows.clear();
         st.tableBlockQuoteRows.clear();
         st.codeBlockQuoteRows.clear();
+        st.blockQuoteDepthByRow.clear();
     }
 
     private static void applyBlockQuoteStyle(Sheet sheet, MdStyle styles, RenderState st, int firstRow, int lastRow,
@@ -59,6 +62,10 @@ public final class BlockQuoteUtil {
             boolean tableQuoteRow = st.tableBlockQuoteRows.contains(r);
 
             boolean codeBlockQuoteRow = st.codeBlockQuoteRows.contains(r);
+
+            Integer depthValue = st.blockQuoteDepthByRow.get(r);
+
+            int quoteDepth = (depthValue == null) ? 1 : Math.max(1, depthValue.intValue());
 
             for (int c = startCol; c <= fillEndCol; c++) {
                 Cell cell = rowObj.getCell(c);
@@ -111,12 +118,13 @@ public final class BlockQuoteUtil {
                     continue;
                 }
 
-                boolean isLeft = (c == startCol);
+                boolean isQuoteDecorCol = c >= startCol && c < startCol + quoteDepth;
 
                 if (blankQuoteRow) {
-                    cell.setCellStyle(isLeft ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
+                    cell.setCellStyle(
+                            c == startCol ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
 
-                } else if (isLeft) {
+                } else if (isQuoteDecorCol) {
                     cell.setCellStyle(styles.blockQuoteLeftStyle);
 
                 } else {

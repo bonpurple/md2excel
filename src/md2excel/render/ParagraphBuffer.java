@@ -38,6 +38,7 @@ final class ParagraphBuffer {
     boolean inBlockQuote = false;
     int quoteStartCol = -1; // 本文列
     int quoteDecorCol = -1; // 左罫線列
+    int quoteDepth = 1;
 
     // スタイル
     CellStyle firstLineStyle;

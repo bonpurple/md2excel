@@ -1,8 +1,10 @@
 package md2excel.render;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -111,6 +113,8 @@ final class RenderState {
     final Set<Integer> blankBlockQuoteRows = new HashSet<Integer>();
     final Set<Integer> tableBlockQuoteRows = new HashSet<Integer>();
     final Set<Integer> horizontalRuleBlockQuoteRows = new HashSet<Integer>();
+
+    final Map<Integer, Integer> blockQuoteDepthByRow = new HashMap<Integer, Integer>();
 
     // =========================
     // 状態遷移をここ1か所に集約

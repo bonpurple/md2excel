@@ -844,9 +844,17 @@ public final class MarkdownRenderer {
     }
 
     private static void recordQuotedRow(RenderContext ctx, int rowNum, int quoteStartCol, int appendCellCol) {
+
+        recordQuotedRow(ctx, rowNum, quoteStartCol, appendCellCol, 1);
+    }
+
+    private static void recordQuotedRow(RenderContext ctx, int rowNum, int quoteStartCol, int appendCellCol,
+            int quoteDepth) {
+
         int quoteDecorCol = clampCol(quoteStartCol - 1, ctx.st);
 
         if (!ctx.st.inBlockQuote || ctx.st.blockQuoteFirstRow < 0) {
+
             ctx.st.inBlockQuote = true;
             ctx.st.blockQuoteFirstRow = rowNum;
             ctx.st.blockQuoteCol = quoteDecorCol;
@@ -857,6 +865,8 @@ public final class MarkdownRenderer {
         }
 
         ctx.st.blockQuoteLastRow = rowNum;
+
+        ctx.st.blockQuoteDepthByRow.put(rowNum, Math.max(1, quoteDepth));
 
         if (appendCellCol >= 0) {
             ctx.st.blockQuoteCellRow = rowNum;

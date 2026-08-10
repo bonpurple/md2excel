@@ -72,7 +72,7 @@ final class ParagraphUtil {
             return li.kind == MarkdownRenderer.LineKind.NORMAL;
 
         case QUOTE_NORMAL:
-            return isQuotedNormalParagraphLine(li);
+            return isQuotedNormalParagraphLine(li) && getQuoteDepth(li) == p.quoteDepth;
 
         case BULLET:
             return li.kind == MarkdownRenderer.LineKind.NORMAL && li.indent > p.baseIndent;
@@ -225,11 +225,16 @@ final class ParagraphUtil {
     private static ParagraphBuffer startQuoteNormal(MarkdownRenderer.LineInfo li, RenderContext ctx) {
 
         ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.blankRowStyle);
+
         ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
 
         MarkdownRenderer.LineInfo q = li.quotedContent;
 
         int quoteStartCol = calcQuoteStartCol(li.indent, ctx.st);
+
+        int quoteDepth = getQuoteDepth(li);
+
+        int textCol = clampCol(quoteStartCol + quoteDepth - 1, ctx.st);
 
         ParagraphBuffer p = new ParagraphBuffer(ParagraphBuffer.Kind.QUOTE_NORMAL);
 
@@ -237,8 +242,12 @@ final class ParagraphUtil {
         p.inBlockQuote = true;
         p.quoteStartCol = quoteStartCol;
         p.quoteDecorCol = clampCol(quoteStartCol - 1, ctx.st);
-        p.firstCol = quoteStartCol;
-        p.continuationCol = quoteStartCol;
+
+        p.quoteDepth = quoteDepth;
+
+        p.firstCol = textCol;
+        p.continuationCol = textCol;
+
         p.firstLineStyle = ctx.styles.normalStyle;
         p.continuationStyle = ctx.styles.normalStyle;
 
@@ -413,7 +422,9 @@ final class ParagraphUtil {
 
         case QUOTE_NORMAL:
             ctx.st.afterWriteNormalText(rowNum, p.firstCol, p.baseIndent, false);
-            recordQuotedRow(ctx, rowNum, p.quoteStartCol, p.firstCol);
+
+            recordQuotedRow(ctx, rowNum, p.quoteStartCol, p.firstCol, p.quoteDepth);
+
             break;
 
         case QUOTE_BULLET:
@@ -441,7 +452,9 @@ final class ParagraphUtil {
 
         case QUOTE_NORMAL:
             ctx.st.afterWriteNormalText(rowNum, col, p.baseIndent, false);
-            recordQuotedRow(ctx, rowNum, p.quoteStartCol, col);
+
+            recordQuotedRow(ctx, rowNum, p.quoteStartCol, col, p.quoteDepth);
+
             break;
 
         case QUOTE_BULLET:
@@ -603,9 +616,17 @@ final class ParagraphUtil {
     }
 
     private static void recordQuotedRow(RenderContext ctx, int rowNum, int quoteStartCol, int appendCellCol) {
+
+        recordQuotedRow(ctx, rowNum, quoteStartCol, appendCellCol, 1);
+    }
+
+    private static void recordQuotedRow(RenderContext ctx, int rowNum, int quoteStartCol, int appendCellCol,
+            int quoteDepth) {
+
         int quoteDecorCol = clampCol(quoteStartCol - 1, ctx.st);
 
         if (!ctx.st.inBlockQuote || ctx.st.blockQuoteFirstRow < 0) {
+
             ctx.st.inBlockQuote = true;
             ctx.st.blockQuoteFirstRow = rowNum;
             ctx.st.blockQuoteCol = quoteDecorCol;
@@ -617,6 +638,8 @@ final class ParagraphUtil {
 
         ctx.st.blockQuoteLastRow = rowNum;
 
+        ctx.st.blockQuoteDepthByRow.put(rowNum, Math.max(1, quoteDepth));
+
         if (appendCellCol >= 0) {
             ctx.st.blockQuoteCellRow = rowNum;
             ctx.st.blockQuoteCellCol = appendCellCol;
@@ -626,6 +649,20 @@ final class ParagraphUtil {
         }
 
         ctx.st.lastWasBlockQuote = true;
+    }
+
+    private static int getQuoteDepth(MarkdownRenderer.LineInfo li) {
+
+        int depth = 0;
+        MarkdownRenderer.LineInfo current = li;
+
+        while (current != null && current.kind == MarkdownRenderer.LineKind.BLOCK_QUOTE) {
+
+            depth++;
+            current = current.quotedContent;
+        }
+
+        return Math.max(1, depth);
     }
 
     // ------------------------------------------------------------
