@@ -338,6 +338,24 @@ public final class MarkdownInline {
         for (int i = 0; i < markdownText.length();) {
             char ch = markdownText.charAt(i);
 
+            // バックスラッシュエスケープ（インラインコード外）
+            // 例: \* -> *, \_ -> _, \` -> `
+            if (ch == '\\') {
+                if (i + 1 < markdownText.length()) {
+                    char next = markdownText.charAt(i + 1);
+                    if (isBackslashEscapable(next)) {
+                        textBuf.append(next);
+                        i += 2;
+                        continue;
+                    }
+                }
+
+                // エスケープ対象でない場合は '\' 自体を文字として残す
+                textBuf.append(ch);
+                i++;
+                continue;
+            }
+
             // `code`（複数バッククォート含む）
             if (ch == '`') {
                 int tickLen = countBackticks(markdownText, i);
@@ -382,6 +400,10 @@ public final class MarkdownInline {
 
         flushTextToken(tokens, textBuf);
         return tokens;
+    }
+
+    private static boolean isBackslashEscapable(char ch) {
+        return isAsciiPunctuation(ch);
     }
 
     private static void flushTextToken(List<InlineToken> tokens, StringBuilder textBuf) {

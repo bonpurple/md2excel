@@ -5,6 +5,24 @@
 
 ---
 
+## [2.3.1] - 2026-08-19
+
+### Fixed
+- Markdown のインライン解析において、バックスラッシュエスケープされたアスタリスク (`\*`) が誤って強調記号として解釈される不具合を修正
+- `**a\*b**` が意図せず斜体混じりになることがある問題を修正し、`a*b` を太字として正しく出力するよう改善
+- `c\*d` が `c*d` ではなく `c\*d` のまま出力される問題を修正
+- 箇条書き内の `**e\*f**` が `e*f` の太字として正しく出力されない問題を修正
+- 箇条書き内の `g\*h` が `g*h` ではなく `g\*h` のまま出力される問題を修正
+
+### Changed
+- 再発防止のため、`verify-paragraph-rendering.md` に以下の検証パターンを追加
+  - normal paragraph: escaped asterisk inside strong emphasis
+  - normal paragraph: escaped asterisk in plain text
+  - bullet list paragraph: bullet item escaped asterisk inside strong emphasis
+  - bullet list paragraph: bullet item escaped asterisk in plain text
+
+---
+
 ## [2.3.0] - 2026-08-11
 
 ### Added

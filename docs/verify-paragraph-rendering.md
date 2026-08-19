@@ -35,6 +35,14 @@ foo<br>**bar**
 `aa
 bb` and **cc**
 
+### N8 escaped asterisk inside strong emphasis
+
+**a\*b**
+
+### N9 escaped asterisk in plain text
+
+c\*d
+
 ---
 
 ## setext heading rendering
@@ -148,6 +156,14 @@ after thematic break
 - parent
   - child
     tail
+
+### L8 bullet item escaped asterisk inside strong emphasis
+
+- **e\*f**
+
+### L9 bullet item escaped asterisk in plain text
+
+* g\*h
 
 ---
 
