@@ -1,21 +1,15 @@
 package md2excel.render;
 
-import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.WeakHashMap;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.Font;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFColor;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFRichTextString;
 
+import md2excel.markdown.MdInlineCodeUtil;
 import md2excel.markdown.MdTextUtil;
 
 public final class MarkdownInline {
@@ -23,60 +17,9 @@ public final class MarkdownInline {
     private MarkdownInline() {
     }
 
-    private static final Map<Workbook, FontCache> FONT_CACHE = Collections
-            .synchronizedMap(new WeakHashMap<Workbook, FontCache>());
-
     // ParagraphBuffer と同じ値を使う
     private static final char SOFT_BREAK_TOKEN = ParagraphBuffer.SOFT_BREAK_TOKEN;
     private static final char HARD_BREAK_TOKEN = ParagraphBuffer.HARD_BREAK_TOKEN;
-
-    private static final class FontCache {
-        final Map<Short, MarkdownFonts> inlineFontsByBaseFontIndex = new HashMap<Short, MarkdownFonts>();
-        final Map<Short, CodeBlockFonts> codeBlockFontsByStyleFontIndex = new HashMap<Short, CodeBlockFonts>();
-    }
-
-    private static FontCache cache(Workbook wb) {
-        FontCache c = FONT_CACHE.get(wb);
-        if (c == null) {
-            c = new FontCache();
-            FONT_CACHE.put(wb, c);
-        }
-        return c;
-    }
-
-    private static final class CodeBlockFonts {
-        final Font ascii;
-        final Font cjk;
-
-        CodeBlockFonts(Font ascii, Font cjk) {
-            this.ascii = ascii;
-            this.cjk = cjk;
-        }
-    }
-
-    private static final class MarkdownFonts {
-        final Font baseFont;
-        final Font boldFont;
-        final Font italicFont;
-        final Font boldItalicFont;
-        final XSSFFont codeAscii;
-        final XSSFFont codeCjk;
-        final XSSFFont codeAsciiBold;
-        final XSSFFont codeCjkBold;
-        boolean baseBold;
-
-        MarkdownFonts(Font baseFont, Font boldFont, Font italicFont, Font boldItalicFont, XSSFFont codeAscii,
-                XSSFFont codeCjk, XSSFFont codeAsciiBold, XSSFFont codeCjkBold) {
-            this.baseFont = baseFont;
-            this.boldFont = boldFont;
-            this.italicFont = italicFont;
-            this.boldItalicFont = boldItalicFont;
-            this.codeAscii = codeAscii;
-            this.codeCjk = codeCjk;
-            this.codeAsciiBold = codeAsciiBold;
-            this.codeCjkBold = codeCjkBold;
-        }
-    }
 
     // package-private: render パッケージ内から直接使う
     static final class MdSegment {
@@ -202,12 +145,14 @@ public final class MarkdownInline {
     }
 
     // package-private: Renderer / Table / CellAppendUtil から使う
-    static void setResolvedSegmentsCell(Workbook workbook, Cell cell, List<MdSegment> segments, CellStyle baseStyle) {
+    static void setResolvedSegmentsCell(MarkdownFontCache fontCache, Cell cell, List<MdSegment> segments,
+            CellStyle baseStyle) {
+
         if (segments == null) {
             segments = Collections.<MdSegment>emptyList();
         }
 
-        MarkdownFonts fonts = prepareMarkdownFonts(workbook, baseStyle);
+        MarkdownFontCache.InlineFonts fonts = fontCache.getInlineFonts(baseStyle);
 
         XSSFRichTextString rich = new XSSFRichTextString("");
         appendSegmentsToRichText(rich, 0, segments, fonts);
@@ -216,14 +161,14 @@ public final class MarkdownInline {
         cell.setCellValue(rich);
     }
 
-    static void appendResolvedSegmentsToCell(Workbook workbook, Cell cell, List<MdSegment> segments,
+    static void appendResolvedSegmentsToCell(MarkdownFontCache fontCache, Cell cell, List<MdSegment> segments,
             CellStyle baseStyle, boolean withLeadingSpace) {
 
         if (segments == null || segments.isEmpty()) {
             return;
         }
 
-        MarkdownFonts fonts = prepareMarkdownFonts(workbook, baseStyle);
+        MarkdownFontCache.InlineFonts fonts = fontCache.getInlineFonts(baseStyle);
 
         XSSFRichTextString original = (XSSFRichTextString) cell.getRichStringCellValue();
         XSSFRichTextString rich = cloneRichTextString(original);
@@ -358,8 +303,9 @@ public final class MarkdownInline {
 
             // `code`（複数バッククォート含む）
             if (ch == '`') {
-                int tickLen = countBackticks(markdownText, i);
-                int close = findClosingBackticks(markdownText, i + tickLen, tickLen);
+                int tickLen = MdInlineCodeUtil.countBackticks(markdownText, i);
+
+                int close = MdInlineCodeUtil.findClosingBackticks(markdownText, i + tickLen, tickLen);
                 if (close >= 0) {
                     flushTextToken(tokens, textBuf);
 
@@ -666,69 +612,8 @@ public final class MarkdownInline {
         return sb.toString();
     }
 
-    private static MarkdownFonts prepareMarkdownFonts(Workbook wb, CellStyle baseStyle) {
-        short key = (short) baseStyle.getFontIndex();
-
-        FontCache c = cache(wb);
-        MarkdownFonts cached = c.inlineFontsByBaseFontIndex.get(key);
-        if (cached != null) {
-            return cached;
-        }
-
-        Font base = wb.getFontAt(baseStyle.getFontIndex());
-        boolean baseBold = base.getBold();
-
-        Font bold = wb.createFont();
-        bold.setFontName(base.getFontName());
-        bold.setFontHeightInPoints(base.getFontHeightInPoints());
-        bold.setBold(true);
-
-        Font italic = wb.createFont();
-        italic.setFontName(base.getFontName());
-        italic.setFontHeightInPoints(base.getFontHeightInPoints());
-        italic.setBold(baseBold);
-        italic.setItalic(true);
-
-        Font boldItalic = wb.createFont();
-        boldItalic.setFontName(base.getFontName());
-        boldItalic.setFontHeightInPoints(base.getFontHeightInPoints());
-        boldItalic.setBold(true);
-        boldItalic.setItalic(true);
-
-        XSSFColor inlineRed = new XSSFColor(new Color(180, 0, 0), null);
-
-        XSSFFont codeAscii = (XSSFFont) wb.createFont();
-        codeAscii.setFontName("Consolas");
-        codeAscii.setFontHeightInPoints(base.getFontHeightInPoints());
-        codeAscii.setColor(inlineRed);
-
-        XSSFFont codeCjk = (XSSFFont) wb.createFont();
-        codeCjk.setFontName("Meiryo");
-        codeCjk.setFontHeightInPoints(base.getFontHeightInPoints());
-        codeCjk.setColor(inlineRed);
-
-        XSSFFont codeAsciiBold = (XSSFFont) wb.createFont();
-        codeAsciiBold.setFontName("Consolas");
-        codeAsciiBold.setFontHeightInPoints(base.getFontHeightInPoints());
-        codeAsciiBold.setBold(true);
-        codeAsciiBold.setColor(inlineRed);
-
-        XSSFFont codeCjkBold = (XSSFFont) wb.createFont();
-        codeCjkBold.setFontName("Meiryo");
-        codeCjkBold.setFontHeightInPoints(base.getFontHeightInPoints());
-        codeCjkBold.setBold(true);
-        codeCjkBold.setColor(inlineRed);
-
-        MarkdownFonts mf = new MarkdownFonts(base, bold, italic, boldItalic, codeAscii, codeCjk, codeAsciiBold,
-                codeCjkBold);
-        mf.baseBold = baseBold;
-
-        c.inlineFontsByBaseFontIndex.put(key, mf);
-        return mf;
-    }
-
     private static int appendSegmentsToRichText(XSSFRichTextString rich, int startPos, List<MdSegment> segments,
-            MarkdownFonts fonts) {
+            MarkdownFontCache.InlineFonts fonts) {
 
         int pos = startPos;
         if (segments == null || segments.isEmpty()) {
@@ -805,42 +690,27 @@ public final class MarkdownInline {
         return dst;
     }
 
-    public static void setCodeBlockRichTextCell(Workbook workbook, Cell cell, String codeText,
+    public static void setCodeBlockRichTextCell(MarkdownFontCache fontCache, Cell cell, String codeText,
             CellStyle codeBlockStyle) {
 
-        FontCache c = cache(workbook);
-
-        short key = (short) codeBlockStyle.getFontIndex();
-        CodeBlockFonts fonts = c.codeBlockFontsByStyleFontIndex.get(key);
-        if (fonts == null) {
-            Font baseFont = workbook.getFontAt(codeBlockStyle.getFontIndex());
-            short baseFontHeight = baseFont.getFontHeightInPoints();
-
-            Font codeAsciiFont = workbook.createFont();
-            codeAsciiFont.setFontName("Consolas");
-            codeAsciiFont.setFontHeightInPoints(baseFontHeight);
-
-            Font codeCjkFont = workbook.createFont();
-            codeCjkFont.setFontName("Meiryo");
-            codeCjkFont.setFontHeightInPoints(baseFontHeight);
-
-            fonts = new CodeBlockFonts(codeAsciiFont, codeCjkFont);
-            c.codeBlockFontsByStyleFontIndex.put(key, fonts);
-        }
+        MarkdownFontCache.CodeBlockFonts fonts = fontCache.getCodeBlockFonts(codeBlockStyle);
 
         XSSFRichTextString rich = new XSSFRichTextString(codeText);
 
         int i = 0;
+
         while (i < codeText.length()) {
             int runStart = i;
             boolean ascii = MdTextUtil.isAsciiLike(codeText.charAt(i));
+
             i++;
+
             while (i < codeText.length() && MdTextUtil.isAsciiLike(codeText.charAt(i)) == ascii) {
                 i++;
             }
-            int runLen = i - runStart;
+
             int start = runStart;
-            int end = start + runLen;
+            int end = i;
 
             rich.applyFont(start, end, ascii ? fonts.ascii : fonts.cjk);
         }
@@ -969,29 +839,6 @@ public final class MarkdownInline {
     // setResolvedSegmentsCell を使うこと。
     public static String brToSingleSpace(String markdownText) {
         return segmentsToPlainText(parseParagraphToSingleLineSegments(markdownText));
-    }
-
-    private static int countBackticks(String text, int pos) {
-        int count = 0;
-        while (pos + count < text.length() && text.charAt(pos + count) == '`') {
-            count++;
-        }
-        return count;
-    }
-
-    private static int findClosingBackticks(String text, int start, int tickLen) {
-        for (int i = start; i < text.length();) {
-            if (text.charAt(i) != '`') {
-                i++;
-                continue;
-            }
-            int runLen = countBackticks(text, i);
-            if (runLen == tickLen) {
-                return i;
-            }
-            i += runLen;
-        }
-        return -1;
     }
 
     private static String normalizeCodeSpanContent(String code) {

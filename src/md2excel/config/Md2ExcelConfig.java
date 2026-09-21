@@ -1,16 +1,20 @@
 package md2excel.config;
 
-import java.io.File;
-
-import javax.swing.JFileChooser;
-import javax.swing.JOptionPane;
-
+import org.apache.poi.ss.SpreadsheetVersion;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 
 public final class Md2ExcelConfig {
+
+    // B列開始と左右の余白を確保するため、最低3列（A～C）とする
+    public static final int MIN_SHEET_COLUMN_COUNT = 3;
+    public static final int MAX_SHEET_COLUMN_COUNT = SpreadsheetVersion.EXCEL2007.getMaxColumns();
+
+    public static final int MIN_FONT_SIZE = 5;
+    public static final int MAX_FONT_SIZE = 72;
+
     public final String inPath;
     public final String outPath;
-    public final int mergeCols;
+    public final int sheetColumnCount;
     public final String fontName;
     public final int h1Size;
     public final int h2Size;
@@ -18,123 +22,48 @@ public final class Md2ExcelConfig {
     public final int normalSize;
     public final VerticalAlignment vAlign;
 
-    // 既定値
-    private static final String DEFAULT_FONT_NAME = "游ゴシック";
-    private static final int DEFAULT_H1_FONT_SIZE = 16;
-    private static final int DEFAULT_H2_FONT_SIZE = 14;
-    private static final int DEFAULT_H3_FONT_SIZE = 12;
-    private static final int DEFAULT_NORMAL_FONT_SIZE = 11;
-    private static final int DEFAULT_MERGE_COLS = 40;
+    public Md2ExcelConfig(String inPath, String outPath, int sheetColumnCount, String fontName, int h1Size, int h2Size,
+            int h3Size, int normalSize, VerticalAlignment vAlign) {
 
-    private Md2ExcelConfig(String in, String out, int mergeCols, String fontName, int h1, int h2, int h3, int normal,
-            VerticalAlignment vAlign) {
-        this.inPath = in;
-        this.outPath = out;
-        this.mergeCols = mergeCols;
-        this.fontName = fontName;
-        this.h1Size = h1;
-        this.h2Size = h2;
-        this.h3Size = h3;
-        this.normalSize = normal;
+        this.inPath = requireText(inPath, "inPath");
+        this.outPath = requireText(outPath, "outPath");
+        this.fontName = requireText(fontName, "fontName");
+
+        validateRange(sheetColumnCount, MIN_SHEET_COLUMN_COUNT, MAX_SHEET_COLUMN_COUNT, "sheetColumnCount");
+
+        validateRange(h1Size, MIN_FONT_SIZE, MAX_FONT_SIZE, "h1Size");
+
+        validateRange(h2Size, MIN_FONT_SIZE, MAX_FONT_SIZE, "h2Size");
+
+        validateRange(h3Size, MIN_FONT_SIZE, MAX_FONT_SIZE, "h3Size");
+
+        validateRange(normalSize, MIN_FONT_SIZE, MAX_FONT_SIZE, "normalSize");
+
+        if (vAlign == null) {
+            throw new IllegalArgumentException("vAlign must not be null");
+        }
+
+        this.sheetColumnCount = sheetColumnCount;
+        this.h1Size = h1Size;
+        this.h2Size = h2Size;
+        this.h3Size = h3Size;
+        this.normalSize = normalSize;
         this.vAlign = vAlign;
     }
 
-    public static Md2ExcelConfig load(String[] args) {
-        // ダイアログで設定
-        File mdFile = chooseMarkdownFile();
-        if (mdFile == null) {
-            return null;
+    private static String requireText(String value, String name) {
+
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalArgumentException(name + " must not be empty");
         }
-        String in = mdFile.getAbsolutePath();
-        String out = replaceExtension(in, ".xlsx");
 
-        String inputCols = JOptionPane.showInputDialog(null, "1行分として扱う列数（MERGE_LAST_COL）を入力してください。", "40");
-        int mergeCols = parseIntOrDefault(inputCols, DEFAULT_MERGE_COLS);
-
-        // フォント選択
-        String[] fontCandidates = { "游ゴシック", "Yu Gothic UI", "ＭＳ Ｐゴシック", "ＭＳ ゴシック", "Meiryo", "Meiryo UI" };
-        Object selectedFont = JOptionPane.showInputDialog(null, "フォントを選択してください（キャンセルで既定のフォント）。", "フォント選択",
-                JOptionPane.QUESTION_MESSAGE, null, fontCandidates, DEFAULT_FONT_NAME);
-        String fontName = (selectedFont == null) ? DEFAULT_FONT_NAME : selectedFont.toString().trim();
-
-        // 縦位置
-        String[] valignOptions = { "上揃え", "上下中央揃え", "下揃え" };
-        Object selectedAlign = JOptionPane.showInputDialog(null, "セルの縦方向の配置を選択してください。", "縦位置",
-                JOptionPane.QUESTION_MESSAGE, null, valignOptions, "下揃え");
-        VerticalAlignment vAlign = (selectedAlign == null) ? VerticalAlignment.BOTTOM
-                : toVerticalAlignment(selectedAlign.toString());
-
-        // サイズ
-        int h1 = parseFontSize(JOptionPane.showInputDialog(null, "# 見出しのフォントサイズ (pt) を入力してください。",
-                Integer.toString(DEFAULT_H1_FONT_SIZE)), DEFAULT_H1_FONT_SIZE);
-
-        int h2 = parseFontSize(JOptionPane.showInputDialog(null, "## 見出しのフォントサイズ (pt) を入力してください。",
-                Integer.toString(DEFAULT_H2_FONT_SIZE)), DEFAULT_H2_FONT_SIZE);
-
-        int h3 = parseFontSize(JOptionPane.showInputDialog(null, "### 見出しのフォントサイズ (pt) を入力してください。",
-                Integer.toString(DEFAULT_H3_FONT_SIZE)), DEFAULT_H3_FONT_SIZE);
-
-        int normal = parseFontSize(JOptionPane.showInputDialog(null, "通常テキストのフォントサイズ (pt) を入力してください。",
-                Integer.toString(DEFAULT_NORMAL_FONT_SIZE)), DEFAULT_NORMAL_FONT_SIZE);
-
-        return new Md2ExcelConfig(in, out, mergeCols, fontName, h1, h2, h3, normal, vAlign);
+        return value.trim();
     }
 
-    private static File chooseMarkdownFile() {
-        JFileChooser fc = new JFileChooser();
-        fc.setDialogTitle("Markdown ファイルを選択してください");
-        fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        int result = fc.showOpenDialog(null);
-        if (result == JFileChooser.APPROVE_OPTION) {
-            return fc.getSelectedFile();
-        }
-        return null;
-    }
+    private static void validateRange(int value, int min, int max, String name) {
 
-    private static VerticalAlignment toVerticalAlignment(String label) {
-        switch (label) {
-        case "上揃え":
-            return VerticalAlignment.TOP;
-        case "下揃え":
-            return VerticalAlignment.BOTTOM;
-        case "上下中央揃え":
-        default:
-            return VerticalAlignment.CENTER;
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(name + " must be between " + min + " and " + max + ": " + value);
         }
-    }
-
-    private static int parseFontSize(String s, int defaultSize) {
-        if (s == null || s.trim().isEmpty()) {
-            return defaultSize;
-        }
-        try {
-            int v = Integer.parseInt(s.trim());
-            if (v < 5 || v > 72) {
-                return defaultSize;
-            }
-            return v;
-        } catch (NumberFormatException e) {
-            return defaultSize;
-        }
-    }
-
-    private static int parseIntOrDefault(String s, int defaultValue) {
-        if (s == null || s.trim().isEmpty()) {
-            return defaultValue;
-        }
-        try {
-            int v = Integer.parseInt(s.trim());
-            return v > 0 ? v : defaultValue;
-        } catch (NumberFormatException e) {
-            return defaultValue;
-        }
-    }
-
-    private static String replaceExtension(String path, String newExt) {
-        int dot = path.lastIndexOf('.');
-        if (dot == -1) {
-            return path + newExt;
-        }
-        return path.substring(0, dot) + newExt;
     }
 }

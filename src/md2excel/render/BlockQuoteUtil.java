@@ -5,13 +5,14 @@ import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 
-import md2excel.excel.MdStyle;
+import md2excel.excel.ExcelCellUtil;
+import md2excel.excel.MdStyleCatalog;
 
 public final class BlockQuoteUtil {
     private BlockQuoteUtil() {
     }
 
-    public static void closeBlockQuoteIfOpen(Sheet sheet, MdStyle styles, RenderState st) {
+    public static void closeBlockQuoteIfOpen(Sheet sheet, MdStyleCatalog styles, RenderState st) {
         if (!st.inBlockQuote) {
             st.clearBlockQuoteRows();
             return;
@@ -22,7 +23,7 @@ public final class BlockQuoteUtil {
         }
 
         applyBlockQuoteStyle(sheet, styles, st, st.blockQuoteFirstRow, st.blockQuoteLastRow, st.blockQuoteCol,
-                st.lastColIndex);
+                st.renderLastColIndex);
 
         st.inBlockQuote = false;
         st.blockQuoteFirstRow = -1;
@@ -33,8 +34,8 @@ public final class BlockQuoteUtil {
         st.clearBlockQuoteRows();
     }
 
-    private static void applyBlockQuoteStyle(Sheet sheet, MdStyle styles, RenderState st, int firstRow, int lastRow,
-            int startCol, int lastColIndex) {
+    private static void applyBlockQuoteStyle(Sheet sheet, MdStyleCatalog styles, RenderState st, int firstRow,
+            int lastRow, int startCol, int lastColIndex) {
 
         int fillEndCol = Math.max(startCol, lastColIndex);
 
@@ -53,23 +54,21 @@ public final class BlockQuoteUtil {
             int quoteDepth = quoteRowInfo == null ? 1 : quoteRowInfo.depth;
 
             for (int c = startCol; c <= fillEndCol; c++) {
-                Cell cell = rowObj.getCell(c);
+                Cell cell = ExcelCellUtil.getOrCreateCell(rowObj, c);
 
-                if (cell == null) {
-                    cell = rowObj.createCell(c);
-                    cell.setBlank();
-                }
+                // startColは最も左側の引用装飾列。
+                // 引用深度分の列を引用罫線列として扱う。
+                boolean isQuoteDecorCol = c >= startCol && c < startCol + quoteDepth;
 
                 // ----------------------------------------
                 // code
                 // ----------------------------------------
                 if (quoteRowKind == RenderState.QuoteRowKind.CODE) {
-
-                    if (c == startCol) {
+                    if (isQuoteDecorCol) {
                         cell.setCellStyle(styles.blockQuoteLeftStyle);
                     }
 
-                    // codeBlockFrameStyle は維持する。
+                    // 引用装飾列以外はcodeBlockFrameStyleを維持する。
                     continue;
                 }
 
@@ -78,7 +77,7 @@ public final class BlockQuoteUtil {
                 // ----------------------------------------
                 if (quoteRowKind == RenderState.QuoteRowKind.HORIZONTAL_RULE) {
 
-                    if (c == startCol) {
+                    if (isQuoteDecorCol) {
                         cell.setCellStyle(styles.blockQuoteBlankLeftStyle);
                     } else {
                         cell.setCellStyle(styles.blockQuoteHorizontalRuleBodyStyle);
@@ -91,28 +90,16 @@ public final class BlockQuoteUtil {
                 // table
                 // ----------------------------------------
                 if (quoteRowKind == RenderState.QuoteRowKind.TABLE) {
-
-                    if (c == startCol) {
+                    if (isQuoteDecorCol) {
                         cell.setCellStyle(styles.blockQuoteLeftStyle);
 
+                    } else if (quoteRowInfo != null && quoteRowInfo.isTableContentColumn(c)) {
+
+                        cell.setCellStyle(resolveQuoteTableStyle(quoteRowInfo.tableRowStyleRole, styles));
+
                     } else {
-                        CellStyle currentStyle = cell.getCellStyle();
-
-                        if (currentStyle.getIndex() == styles.tableHeaderStyle.getIndex()) {
-
-                            cell.setCellStyle(styles.tableHeaderQuoteStyle);
-
-                        } else if (currentStyle.getIndex() == styles.tableBodyLastRowStyle.getIndex()) {
-
-                            cell.setCellStyle(styles.tableBodyLastRowQuoteStyle);
-
-                        } else if (currentStyle.getIndex() == styles.tableBodyStyle.getIndex()) {
-
-                            cell.setCellStyle(styles.tableBodyQuoteStyle);
-
-                        } else {
-                            cell.setCellStyle(styles.blockQuoteBodyStyle);
-                        }
+                        // テーブル範囲より右側は引用背景だけを適用する。
+                        cell.setCellStyle(styles.blockQuoteBodyStyle);
                     }
 
                     continue;
@@ -122,9 +109,6 @@ public final class BlockQuoteUtil {
                 // blank
                 // ----------------------------------------
                 if (quoteRowKind == RenderState.QuoteRowKind.BLANK) {
-
-                    boolean isQuoteDecorCol = c >= startCol && c < startCol + quoteDepth;
-
                     cell.setCellStyle(
                             isQuoteDecorCol ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
 
@@ -134,38 +118,58 @@ public final class BlockQuoteUtil {
                 // ----------------------------------------
                 // normal / heading / list
                 // ----------------------------------------
-                boolean isQuoteDecorCol = c >= startCol && c < startCol + quoteDepth;
-
                 if (isQuoteDecorCol) {
                     cell.setCellStyle(styles.blockQuoteLeftStyle);
-
                 } else {
-                    cell.setCellStyle(resolveBlockQuoteContentStyle(cell.getCellStyle(), styles));
+                    cell.setCellStyle(resolveBlockQuoteContentStyle(quoteRowInfo, c, styles));
                 }
             }
         }
     }
 
-    private static CellStyle resolveBlockQuoteContentStyle(CellStyle currentStyle, MdStyle styles) {
+    private static CellStyle resolveBlockQuoteContentStyle(RenderState.QuoteRowInfo quoteRowInfo, int col,
+            MdStyleCatalog styles) {
 
-        int styleIndex = currentStyle.getIndex();
+        if (quoteRowInfo == null || col != quoteRowInfo.contentCol) {
+            return styles.blockQuoteBodyStyle;
+        }
 
-        if (styleIndex == styles.heading1Style.getIndex() || styleIndex == styles.blockQuoteHeading1Style.getIndex()) {
+        switch (quoteRowInfo.kind) {
+        case HEADING_1:
             return styles.blockQuoteHeading1Style;
-        }
 
-        if (styleIndex == styles.heading2Style.getIndex() || styleIndex == styles.blockQuoteHeading2Style.getIndex()) {
+        case HEADING_2:
             return styles.blockQuoteHeading2Style;
-        }
 
-        if (styleIndex == styles.heading3Style.getIndex() || styleIndex == styles.blockQuoteHeading3Style.getIndex()) {
+        case HEADING_3:
             return styles.blockQuoteHeading3Style;
-        }
 
-        if (styleIndex == styles.heading4Style.getIndex() || styleIndex == styles.blockQuoteHeading4Style.getIndex()) {
+        case HEADING_4:
             return styles.blockQuoteHeading4Style;
+
+        default:
+            return styles.blockQuoteBodyStyle;
+        }
+    }
+
+    private static CellStyle resolveQuoteTableStyle(MarkdownTable.TableRowStyleRole role, MdStyleCatalog styles) {
+
+        if (role == null) {
+            return styles.blockQuoteBodyStyle;
         }
 
-        return styles.blockQuoteBodyStyle;
+        switch (role) {
+        case HEADER:
+            return styles.tableHeaderQuoteStyle;
+
+        case BODY_WITH_BOTTOM_BORDER:
+            return styles.tableBodyQuoteStyle;
+
+        case BODY_WITHOUT_BOTTOM_BORDER:
+            return styles.tableBodyLastRowQuoteStyle;
+
+        default:
+            return styles.blockQuoteBodyStyle;
+        }
     }
 }

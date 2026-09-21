@@ -1,5 +1,9 @@
 package md2excel.render;
 
+import static md2excel.render.RenderLayout.calcQuoteStartCol;
+import static md2excel.render.RenderLayout.clampCol;
+import static md2excel.render.RenderLayout.rootCol;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -22,7 +26,7 @@ final class ParagraphUtil {
         }
 
         if (li.kind == MarkdownRenderer.LineKind.BLOCK_QUOTE) {
-            MarkdownRenderer.LineInfo q = li.quotedContent;
+            MarkdownRenderer.LineInfo q = li.getInnermostQuotedContent();
             if (q == null) {
                 return false;
             }
@@ -72,7 +76,7 @@ final class ParagraphUtil {
             return li.kind == MarkdownRenderer.LineKind.NORMAL;
 
         case QUOTE_NORMAL:
-            return isQuotedNormalParagraphLine(li) && getQuoteDepth(li) == p.quoteDepth;
+            return isQuotedNormalParagraphLine(li) && li.getQuoteDepth() == p.quoteDepth;
 
         case BULLET:
             return li.kind == MarkdownRenderer.LineKind.NORMAL && li.indent > p.baseIndent;
@@ -90,15 +94,18 @@ final class ParagraphUtil {
     }
 
     private static boolean isQuotedNormalParagraphLine(MarkdownRenderer.LineInfo li) {
+        if (li == null || li.kind != MarkdownRenderer.LineKind.BLOCK_QUOTE) {
+            return false;
+        }
 
-        return li.kind == MarkdownRenderer.LineKind.BLOCK_QUOTE && li.quotedContent != null
-                && isQuotedNormalParagraphKind(li.quotedContent.kind);
+        MarkdownRenderer.LineInfo q = li.getInnermostQuotedContent();
+        return q != null && isQuotedNormalParagraphKind(q.kind);
     }
 
     static ParagraphBuffer start(MarkdownRenderer.LineInfo li, RenderContext ctx) {
 
         if (li.kind == MarkdownRenderer.LineKind.BLOCK_QUOTE) {
-            MarkdownRenderer.LineInfo q = li.quotedContent;
+            MarkdownRenderer.LineInfo q = li.getInnermostQuotedContent();
 
             if (q == null) {
                 throw new IllegalArgumentException("Quoted content is missing");
@@ -141,7 +148,7 @@ final class ParagraphUtil {
         }
 
         String lineText = extractContinuationLineText(p, li);
-        p.appendLine(normalizeInlineLineText(lineText), li.endsWithHardBreak);
+        p.appendLine(lineText, li.endsWithHardBreak);
     }
 
     static void flush(ParagraphBuffer p, RenderContext ctx) {
@@ -182,7 +189,7 @@ final class ParagraphUtil {
         p.reuseMarkdownBlankForFirstRow = shouldReuseBlankForNormalText(ctx.st, f);
         p.isListNote = f.isListNote;
 
-        p.appendLine(normalizeInlineLineText(li.paragraphText), li.endsWithHardBreak);
+        p.appendLine(li.paragraphText, li.endsWithHardBreak);
         return p;
     }
 
@@ -200,7 +207,7 @@ final class ParagraphUtil {
         p.continuationStyle = ctx.styles.bulletStyle;
         p.firstLinePrefix = (li.listMarkerText == null) ? "・ " : li.listMarkerText;
 
-        p.appendLine(normalizeInlineLineText(li.listContentText), li.endsWithHardBreak);
+        p.appendLine(li.listContentText, li.endsWithHardBreak);
         return p;
     }
 
@@ -218,7 +225,7 @@ final class ParagraphUtil {
         p.continuationStyle = ctx.styles.listStyle;
         p.firstLinePrefix = (li.listMarkerText == null) ? "" : li.listMarkerText;
 
-        p.appendLine(normalizeInlineLineText(li.listContentText), li.endsWithHardBreak);
+        p.appendLine(li.listContentText, li.endsWithHardBreak);
         return p;
     }
 
@@ -228,11 +235,11 @@ final class ParagraphUtil {
 
         ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
 
-        MarkdownRenderer.LineInfo q = li.quotedContent;
+        MarkdownRenderer.LineInfo q = li.getInnermostQuotedContent();
 
         int quoteStartCol = calcQuoteStartCol(li.indent, ctx.st);
 
-        int quoteDepth = getQuoteDepth(li);
+        int quoteDepth = li.getQuoteDepth();
 
         int textCol = clampCol(quoteStartCol + quoteDepth - 1, ctx.st);
 
@@ -251,7 +258,7 @@ final class ParagraphUtil {
         p.firstLineStyle = ctx.styles.normalStyle;
         p.continuationStyle = ctx.styles.normalStyle;
 
-        p.appendLine(normalizeInlineLineText(quotedNormalText(q)), q.endsWithHardBreak);
+        p.appendLine(quotedNormalText(q), q.endsWithHardBreak);
 
         return p;
     }
@@ -261,15 +268,16 @@ final class ParagraphUtil {
         ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.blankRowStyle);
         ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
 
-        MarkdownRenderer.LineInfo q = li.quotedContent;
+        MarkdownRenderer.LineInfo q = li.getInnermostQuotedContent();
 
         int quoteStartCol = calcQuoteStartCol(li.indent, ctx.st);
+        int quoteDepth = Math.max(1, li.getQuoteDepth());
 
-        ensureQuotedAutoBlankBeforeChildListIfNeeded(li, ctx, quoteStartCol);
+        ensureQuotedAutoBlankBeforeChildListIfNeeded(li, ctx, quoteStartCol, quoteDepth);
 
-        int depth = ListStackUtil.updateListDepth(ctx.st.listStack, q.indent, false);
+        int listDepth = ListStackUtil.updateListDepth(ctx.st.listStack, q.indent, false);
 
-        int col = clampCol(quoteStartCol + 1 + depth, ctx.st);
+        int col = clampCol(quoteStartCol + quoteDepth + listDepth, ctx.st);
 
         ParagraphBuffer p = new ParagraphBuffer(ParagraphBuffer.Kind.QUOTE_BULLET);
 
@@ -277,13 +285,16 @@ final class ParagraphUtil {
         p.inBlockQuote = true;
         p.quoteStartCol = quoteStartCol;
         p.quoteDecorCol = clampCol(quoteStartCol - 1, ctx.st);
+        p.quoteDepth = quoteDepth;
+
         p.firstCol = col;
         p.continuationCol = clampCol(col + 1, ctx.st);
+
         p.firstLineStyle = ctx.styles.bulletStyle;
         p.continuationStyle = ctx.styles.bulletStyle;
         p.firstLinePrefix = (q.listMarkerText == null) ? "・ " : q.listMarkerText;
 
-        p.appendLine(normalizeInlineLineText(q.listContentText), q.endsWithHardBreak);
+        p.appendLine(q.listContentText, q.endsWithHardBreak);
 
         return p;
     }
@@ -293,15 +304,16 @@ final class ParagraphUtil {
         ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.blankRowStyle);
         ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
 
-        MarkdownRenderer.LineInfo q = li.quotedContent;
+        MarkdownRenderer.LineInfo q = li.getInnermostQuotedContent();
 
         int quoteStartCol = calcQuoteStartCol(li.indent, ctx.st);
+        int quoteDepth = Math.max(1, li.getQuoteDepth());
 
-        ensureQuotedAutoBlankBeforeChildListIfNeeded(li, ctx, quoteStartCol);
+        ensureQuotedAutoBlankBeforeChildListIfNeeded(li, ctx, quoteStartCol, quoteDepth);
 
-        int depth = ListStackUtil.updateListDepth(ctx.st.listStack, q.indent, true);
+        int listDepth = ListStackUtil.updateListDepth(ctx.st.listStack, q.indent, true);
 
-        int col = clampCol(quoteStartCol + 1 + depth, ctx.st);
+        int col = clampCol(quoteStartCol + quoteDepth + listDepth, ctx.st);
 
         ParagraphBuffer p = new ParagraphBuffer(ParagraphBuffer.Kind.QUOTE_NUMBER);
 
@@ -309,13 +321,16 @@ final class ParagraphUtil {
         p.inBlockQuote = true;
         p.quoteStartCol = quoteStartCol;
         p.quoteDecorCol = clampCol(quoteStartCol - 1, ctx.st);
+        p.quoteDepth = quoteDepth;
+
         p.firstCol = col;
         p.continuationCol = clampCol(col + 1, ctx.st);
+
         p.firstLineStyle = ctx.styles.listStyle;
         p.continuationStyle = ctx.styles.listStyle;
         p.firstLinePrefix = (q.listMarkerText == null) ? "" : q.listMarkerText;
 
-        p.appendLine(normalizeInlineLineText(q.listContentText), q.endsWithHardBreak);
+        p.appendLine(q.listContentText, q.endsWithHardBreak);
 
         return p;
     }
@@ -403,7 +418,7 @@ final class ParagraphUtil {
             List<MarkdownInline.MdSegment> segments) {
 
         Cell cell = row.createCell(col);
-        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, segments, style);
+        MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, segments, style);
     }
 
     private static void afterWriteFirstLine(ParagraphBuffer p, RenderContext ctx, int rowNum) {
@@ -431,14 +446,16 @@ final class ParagraphUtil {
         case QUOTE_BULLET:
             ctx.st.afterWriteBulletItem(rowNum, p.firstCol);
 
-            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, -1, RenderState.QuoteRowKind.NORMAL);
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, p.firstCol, RenderState.QuoteRowKind.NORMAL,
+                    p.quoteDepth);
 
             break;
 
         case QUOTE_NUMBER:
             ctx.st.afterWriteNumberedItem(p.baseIndent, p.firstCol);
 
-            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, -1, RenderState.QuoteRowKind.NORMAL);
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, p.firstCol, RenderState.QuoteRowKind.NORMAL,
+                    p.quoteDepth);
 
             break;
 
@@ -466,7 +483,7 @@ final class ParagraphUtil {
         case QUOTE_NUMBER:
             ctx.st.afterWriteNormalText(rowNum, col, p.baseIndent, false);
 
-            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, -1, RenderState.QuoteRowKind.NORMAL);
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, col, RenderState.QuoteRowKind.NORMAL, p.quoteDepth);
 
             break;
 
@@ -553,7 +570,7 @@ final class ParagraphUtil {
     }
 
     // ------------------------------------------------------------
-    // text extract / normalize
+    // text extract
     // ------------------------------------------------------------
 
     private static String extractContinuationLineText(ParagraphBuffer p, MarkdownRenderer.LineInfo li) {
@@ -574,64 +591,19 @@ final class ParagraphUtil {
         }
     }
 
-    private static String normalizeInlineLineText(String text) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
-
-        return MdTextUtil.replaceBrOutsideInlineCode(text, String.valueOf(ParagraphBuffer.HARD_BREAK_TOKEN));
-    }
-
     // ------------------------------------------------------------
     // quoted blank helper
     // ------------------------------------------------------------
 
     private static void ensureQuotedAutoBlankBeforeChildListIfNeeded(MarkdownRenderer.LineInfo li, RenderContext ctx,
-            int quoteStartCol) {
+            int quoteStartCol, int quoteDepth) {
 
-        if (li.quotedContent != null && ctx.st.shouldInsertAutoBlankBeforeChildList(li.quotedContent.indent)) {
+        MarkdownRenderer.LineInfo q = li.getInnermostQuotedContent();
 
-            writeQuotedBlankRow(ctx, quoteStartCol);
+        if (q != null && ctx.st.shouldInsertAutoBlankBeforeChildList(q.indent)) {
+
+            BlockQuoteRowUtil.writeBlankRow(ctx, quoteStartCol, quoteDepth);
         }
-    }
-
-    private static void writeQuotedBlankRow(RenderContext ctx, int quoteStartCol) {
-        Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.blankRowStyle);
-
-        Cell cell = row.createCell(quoteStartCol);
-        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, Collections.<MarkdownInline.MdSegment>emptyList(),
-                ctx.styles.blankRowStyle);
-
-        ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, RenderState.QuoteRowKind.BLANK);
-
-        ctx.st.lastRowType = RenderState.RowType.BLANK;
-        ctx.st.lastLineWasTable = false;
-        ctx.st.lastBlankFromMarkdown = false;
-        ctx.st.lastBlankRowIndex = -1;
-        ctx.st.lastBlankAfterTable = false;
-
-        ctx.st.lastContentType = RenderState.ContentType.NORMAL;
-        ctx.st.lastContentCol = quoteStartCol;
-        ctx.st.lastContentWasTable = false;
-
-        ctx.st.lastNormalRowIndex = -1;
-        ctx.st.lastNormalIndent = -1;
-        ctx.st.bulletDetailActive = false;
-        ctx.st.lastWasBlockQuote = true;
-    }
-
-    private static int getQuoteDepth(MarkdownRenderer.LineInfo li) {
-
-        int depth = 0;
-        MarkdownRenderer.LineInfo current = li;
-
-        while (current != null && current.kind == MarkdownRenderer.LineKind.BLOCK_QUOTE) {
-
-            depth++;
-            current = current.quotedContent;
-        }
-
-        return Math.max(1, depth);
     }
 
     // ------------------------------------------------------------
@@ -718,47 +690,5 @@ final class ParagraphUtil {
         }
 
         return text;
-    }
-
-    // ------------------------------------------------------------
-    // col helpers
-    // ------------------------------------------------------------
-
-    private static int calcQuoteStartCol(int indent, RenderState st) {
-        return clampCol(calcBlockStartCol(indent, st) + 1, st);
-    }
-
-    private static int calcBlockStartCol(int indent, RenderState st) {
-        if (indent <= 0) {
-            return rootCol(st);
-        }
-
-        int col;
-        if (!st.listStack.isEmpty()) {
-            int depth = ListStackUtil.getDepthForIndent(st.listStack, indent);
-            col = st.startColIndex + 1 + depth;
-        } else {
-            int level = indent / 2;
-            if (level < 0) {
-                level = 0;
-            }
-            col = st.startColIndex + 1 + level;
-        }
-
-        return clampCol(col, st);
-    }
-
-    private static int rootCol(RenderState st) {
-        return clampCol(st.startColIndex, st);
-    }
-
-    private static int clampCol(int col, RenderState st) {
-        if (col < 0) {
-            return 0;
-        }
-        if (col >= st.mergeLastCol) {
-            return st.mergeLastCol - 1;
-        }
-        return col;
     }
 }

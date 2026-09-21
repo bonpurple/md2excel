@@ -31,8 +31,8 @@ final class RenderState {
         OTHER
     }
 
-    final int mergeLastCol;
-    final int lastColIndex;
+    final int renderEndColExclusive;
+    final int renderLastColIndex;
 
     final int startRowIndex;
     final int startColIndex;
@@ -45,12 +45,22 @@ final class RenderState {
     // 行種別
     RowType lastRowType = RowType.NONE;
 
-    boolean inCodeBlock = false;
     boolean lastLineWasTable = false;
 
     boolean lastBlankFromMarkdown = false;
     int lastBlankRowIndex = -1;
     boolean lastBlankAfterTable = false;
+
+    private final CodeBlockState codeBlock = new CodeBlockState();
+    private final TableState table = new TableState();
+
+    CodeBlockState codeBlock() {
+        return codeBlock;
+    }
+
+    TableState table() {
+        return table;
+    }
 
     // 番号付き説明行
     boolean inNestedNumberBlock = false;
@@ -61,26 +71,6 @@ final class RenderState {
     ContentType lastContentType = ContentType.NONE;
     int lastContentCol = 0;
     boolean lastContentWasTable = false;
-
-    // コードブロック
-    int codeBlockBaseIndent = -1;
-    int codeBlockFirstRow = -1;
-    int codeBlockLastRow = -1;
-    int codeBlockCol = 0;
-    int currentCodeBlockIndent = 0;
-    boolean codeBlockInBlockQuote = false;
-    int codeBlockQuoteStartCol = -1;
-
-    // 開始コードフェンス情報
-    char codeFenceMarker = '\0';
-    int codeFenceLength = 0;
-
-    // テーブル範囲
-    int currentTableStartCol = 0;
-    int currentTableHeaderRow = -1;
-    int currentTableBodyStartRow = -1;
-    int currentTableLastBodyRow = -1;
-    int currentTableEndCol = -1;
 
     // 見出し本文
     boolean inHeadingParagraphBlock = false;
@@ -130,6 +120,10 @@ final class RenderState {
 
     enum QuoteRowKind {
         NORMAL,
+        HEADING_1,
+        HEADING_2,
+        HEADING_3,
+        HEADING_4,
         BLANK,
         HORIZONTAL_RULE,
         TABLE,
@@ -142,11 +136,33 @@ final class RenderState {
         final int depth;
         final int contentCol;
 
+        final int tableStartCol;
+        final int tableEndCol;
+        final MarkdownTable.TableRowStyleRole tableRowStyleRole;
+
         QuoteRowInfo(QuoteRowKind kind, int depth, int contentCol) {
+
+            this(kind, depth, contentCol, -1, -1, null);
+        }
+
+        QuoteRowInfo(QuoteRowKind kind, int depth, int contentCol, int tableStartCol, int tableEndCol,
+                MarkdownTable.TableRowStyleRole tableRowStyleRole) {
 
             this.kind = kind;
             this.depth = Math.max(1, depth);
             this.contentCol = contentCol;
+            this.tableStartCol = tableStartCol;
+            this.tableEndCol = tableEndCol;
+            this.tableRowStyleRole = tableRowStyleRole;
+        }
+
+        QuoteRowInfo withTableRowStyleRole(MarkdownTable.TableRowStyleRole role) {
+
+            return new QuoteRowInfo(kind, depth, contentCol, tableStartCol, tableEndCol, role);
+        }
+
+        boolean isTableContentColumn(int col) {
+            return tableStartCol >= 0 && tableEndCol >= tableStartCol && col >= tableStartCol && col <= tableEndCol;
         }
     }
 
@@ -156,22 +172,19 @@ final class RenderState {
         this(mergeCols, 0, 0);
     }
 
-    RenderState(int mergeCols, int startRowIndex, int startColIndex) {
+    RenderState(int sheetColumnCount, int startRowIndex, int startColIndex) {
+
         this.startRowIndex = Math.max(0, startRowIndex);
         this.startColIndex = Math.max(0, startColIndex);
 
-        // mergeCols は「A列起点の総列数」。
-        // 開始列を右へずらした分だけ、描画可能範囲の右端も左へ寄せる。
-        // 例: startColIndex=1(B列開始), mergeCols=40 のとき
-        // 列幅設定対象 : A..AN
-        // 描画可能範囲 : B..AM
-        int mergeLastColExclusive = mergeCols - this.startColIndex;
-        if (mergeLastColExclusive <= this.startColIndex) {
-            mergeLastColExclusive = this.startColIndex + 1;
+        int endColExclusive = sheetColumnCount - this.startColIndex;
+
+        if (endColExclusive <= this.startColIndex) {
+            endColExclusive = this.startColIndex + 1;
         }
 
-        this.mergeLastCol = mergeLastColExclusive;
-        this.lastColIndex = this.mergeLastCol - 1;
+        this.renderEndColExclusive = endColExclusive;
+        this.renderLastColIndex = endColExclusive - 1;
 
         this.rowIndex = this.startRowIndex;
         this.nestedNumberCol = this.startColIndex + 1;
@@ -404,20 +417,6 @@ final class RenderState {
         apply(Tx.WRITE_CODE_LINE, -1, col, 0, false);
     }
 
-    int computeCodeTrimSpaces(int leadingSpaces) {
-        if (codeBlockBaseIndent < 0)
-            codeBlockBaseIndent = leadingSpaces;
-        return Math.min(leadingSpaces, codeBlockBaseIndent);
-    }
-
-    void recordCodeBlockLinePos(int rowNum, int col) {
-        if (codeBlockFirstRow < 0) {
-            codeBlockFirstRow = rowNum;
-            codeBlockCol = col;
-        }
-        codeBlockLastRow = rowNum;
-    }
-
     void recordBlockQuoteRow(int rowNum, int quoteStartCol, int contentCol, QuoteRowKind kind, int depth) {
 
         int quoteDecorCol = quoteStartCol - 1;
@@ -426,8 +425,8 @@ final class RenderState {
             quoteDecorCol = 0;
         }
 
-        if (quoteDecorCol >= mergeLastCol) {
-            quoteDecorCol = mergeLastCol - 1;
+        if (quoteDecorCol >= renderEndColExclusive) {
+            quoteDecorCol = renderEndColExclusive - 1;
         }
 
         if (!inBlockQuote || blockQuoteFirstRow < 0) {
@@ -458,6 +457,28 @@ final class RenderState {
     void recordBlockQuoteRow(int rowNum, int quoteStartCol, int contentCol, QuoteRowKind kind) {
 
         recordBlockQuoteRow(rowNum, quoteStartCol, contentCol, kind, 1);
+    }
+
+    void recordBlockQuoteTableRow(int rowNum, int quoteStartCol, int tableStartCol, int tableEndCol, int quoteDepth,
+            MarkdownTable.TableRowStyleRole tableRowStyleRole) {
+
+        // 引用範囲などの共通状態を更新する。
+        recordBlockQuoteRow(rowNum, quoteStartCol, tableStartCol, QuoteRowKind.TABLE, quoteDepth);
+
+        // テーブル固有の意味情報を含むメタ情報へ置き換える。
+        blockQuoteRows.put(Integer.valueOf(rowNum), new QuoteRowInfo(QuoteRowKind.TABLE, quoteDepth, tableStartCol,
+                tableStartCol, tableEndCol, tableRowStyleRole));
+    }
+
+    void updateBlockQuoteTableRowStyleRole(int rowNum, MarkdownTable.TableRowStyleRole tableRowStyleRole) {
+
+        QuoteRowInfo current = blockQuoteRows.get(Integer.valueOf(rowNum));
+
+        if (current == null || current.kind != QuoteRowKind.TABLE) {
+            return;
+        }
+
+        blockQuoteRows.put(Integer.valueOf(rowNum), current.withTableRowStyleRole(tableRowStyleRole));
     }
 
     void afterWriteBulletItem(int rowNum, int col) {

@@ -290,6 +290,34 @@ after thematic break
 >
 > outer quote after nested quote
 
+### QD6 heading inside nested quote
+
+> > ### nested quoted heading
+> >
+> > nested quoted paragraph
+
+### QD7 horizontal rule inside nested quote
+
+> > before nested thematic break
+> >
+> > ***
+> >
+> > after nested thematic break
+
+### QD8 bullet list inside nested quote
+
+> > - nested bullet<br>continued bullet
+
+### QD9 numbered list inside nested quote
+
+> > 1. nested number<br>continued number
+
+### QD10 table inside nested quote
+
+> > | h1 | h2 |
+> > | --- | --- |
+> > | a | b |
+
 ---
 
 ## table rendering
@@ -350,6 +378,25 @@ before table
 | a | b |
 
 after table
+
+### T6 pipe in normal paragraph should not start table
+
+price | note
+
+after normal pipe paragraph
+
+### T7 table without leading or trailing pipes
+
+h1 | h2
+--- | ---
+a | b
+c | d
+
+### T8 pipe inside quote should remain normal paragraph
+
+> price | note
+>
+> quoted paragraph after pipe
 
 ---
 
@@ -412,6 +459,20 @@ code after list
 
 normal after code
 
+### C7 code block lines with leading tab
+
+```text
+	x
+	y
+```
+
+### C8 quoted code block lines with leading tab
+
+> ```text
+> 	x
+> 	y
+> ```
+
 ---
 
 ## mixed block boundaries
@@ -471,3 +532,13 @@ normal line after quote
 | h1 | h2 |
 | --- | --- |
 | last | row |
+
+---
+
+## EOF rendering
+
+### E1 code block without closing fence at EOF
+
+```text
+line1
+line2

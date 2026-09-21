@@ -1,7 +1,16 @@
 package md2excel.markdown;
 
 public final class MdTextUtil {
+    private static final String TAB_SPACES = "    ";
+
     private MdTextUtil() {
+    }
+
+    public static String expandTabs(String s) {
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
+        return s.replace("\t", TAB_SPACES);
     }
 
     public static int countLeadingSpacesOrTabs(String s) {
@@ -156,36 +165,8 @@ public final class MdTextUtil {
     }
 
     public static String replaceBrOutsideInlineCode(String s, String replacement) {
-        if (s == null || s.isEmpty())
-            return s;
 
-        StringBuilder out = new StringBuilder(s.length());
-        boolean inCode = false;
-
-        for (int i = 0; i < s.length();) {
-            char ch = s.charAt(i);
-
-            // インラインコードは `<br>` を触らない
-            if (ch == '`') {
-                inCode = !inCode;
-                out.append(ch);
-                i++;
-                continue;
-            }
-
-            if (!inCode) {
-                int brLen = matchBrTagLen(s, i);
-                if (brLen > 0) {
-                    out.append(replacement);
-                    i += brLen;
-                    continue;
-                }
-            }
-
-            out.append(ch);
-            i++;
-        }
-        return out.toString();
+        return MdInlineCodeUtil.replaceBrOutsideCodeSpans(s, replacement);
     }
 
     // "---", "***", "___", "- - -" のような水平線を判定（空白/タブのみ許可）
@@ -215,36 +196,7 @@ public final class MdTextUtil {
     }
 
     public static int matchBrTagLen(String s, int i) {
-        int n = s.length();
-        if (i < 0 || i + 3 >= n)
-            return 0;
-        if (s.charAt(i) != '<')
-            return 0;
-
-        // "<br" / "<BR" / "<bR" / "<Br" を許可
-        char b = s.charAt(i + 1);
-        char r = s.charAt(i + 2);
-        if (Character.toLowerCase(b) != 'b' || Character.toLowerCase(r) != 'r')
-            return 0;
-
-        int j = i + 3;
-
-        // 任意の空白
-        while (j < n && Character.isWhitespace(s.charAt(j)))
-            j++;
-
-        // 任意の "/"（<br/> or <br />）
-        if (j < n && s.charAt(j) == '/') {
-            j++;
-            while (j < n && Character.isWhitespace(s.charAt(j)))
-                j++;
-        }
-
-        // ">" で閉じる
-        if (j < n && s.charAt(j) == '>') {
-            return (j - i) + 1;
-        }
-        return 0;
+        return MdInlineCodeUtil.matchBrTagLength(s, i);
     }
 
     // 連結用：空白を 1 個に寄せたい時だけ使う（テーブル用途）
@@ -275,7 +227,7 @@ public final class MdTextUtil {
             ed--;
         return out.substring(st, ed);
     }
-    
+
     public static boolean isOpeningCodeFenceLine(String trimmedLine) {
         return getCodeFenceLength(trimmedLine) >= 3;
     }
@@ -334,5 +286,43 @@ public final class MdTextUtil {
             }
         }
         return true;
+    }
+
+    public static String removeLeadingIndentColumns(String s, int columnsToRemove) {
+        if (s == null || s.isEmpty() || columnsToRemove <= 0) {
+            return s;
+        }
+
+        int index = 0;
+        int removedColumns = 0;
+
+        while (index < s.length() && removedColumns < columnsToRemove) {
+            char ch = s.charAt(index);
+
+            if (ch != ' ' && ch != '\t') {
+                break;
+            }
+
+            int width = (ch == '\t') ? 4 : 1;
+            int remaining = columnsToRemove - removedColumns;
+
+            // タブの一部だけを除去する場合
+            if (remaining < width) {
+                int remainingSpaces = width - remaining;
+                StringBuilder result = new StringBuilder();
+
+                for (int i = 0; i < remainingSpaces; i++) {
+                    result.append(' ');
+                }
+
+                result.append(s, index + 1, s.length());
+                return result.toString();
+            }
+
+            removedColumns += width;
+            index++;
+        }
+
+        return s.substring(index);
     }
 }

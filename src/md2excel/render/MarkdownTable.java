@@ -6,8 +6,10 @@ import java.util.List;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
 
-import md2excel.excel.MdStyle;
+import md2excel.excel.ExcelCellUtil;
+import md2excel.excel.MdStyleCatalog;
 
 public final class MarkdownTable {
 
@@ -19,34 +21,106 @@ public final class MarkdownTable {
         return countUnescapedPipes(trimmed) >= 1;
     }
 
-    public static boolean isTableSeparatorLine(String trimmed) {
-        if (!trimmed.contains("|"))
+    public static boolean isTableSeparatorLine(String line) {
+        if (line == null) {
             return false;
-        for (int i = 0; i < trimmed.length(); i++) {
-            char c = trimmed.charAt(i);
-            if (c != '|' && c != '-' && c != ':' && !Character.isWhitespace(c)) {
+        }
+
+        String trimmed = line.trim();
+        if (countUnescapedPipes(trimmed) < 1) {
+            return false;
+        }
+
+        List<String> cells = splitTableCells(trimmed);
+        if (cells.isEmpty()) {
+            return false;
+        }
+
+        for (String cell : cells) {
+            if (!isTableSeparatorCell(cell)) {
                 return false;
             }
         }
+
         return true;
+    }
+
+    public static boolean isTableStart(String headerLine, String separatorLine) {
+        if (!isTableLine(headerLine) || isTableSeparatorLine(headerLine) || !isTableSeparatorLine(separatorLine)) {
+            return false;
+        }
+
+        return splitTableCells(headerLine).size() == splitTableCells(separatorLine).size();
+    }
+
+    private static boolean isTableSeparatorCell(String cell) {
+        StringBuilder compact = new StringBuilder();
+
+        for (int i = 0; i < cell.length(); i++) {
+            char ch = cell.charAt(i);
+            if (!Character.isWhitespace(ch)) {
+                compact.append(ch);
+            }
+        }
+
+        int start = 0;
+        int end = compact.length();
+
+        if (start < end && compact.charAt(start) == ':') {
+            start++;
+        }
+        if (start < end && compact.charAt(end - 1) == ':') {
+            end--;
+        }
+
+        int hyphenCount = 0;
+        for (int i = start; i < end; i++) {
+            if (compact.charAt(i) != '-') {
+                return false;
+            }
+            hyphenCount++;
+        }
+
+        // 既存の "| -- | -- |" も許容する
+        return hyphenCount >= 1;
+    }
+
+    enum TableRowStyleRole {
+        HEADER,
+        BODY_WITH_BOTTOM_BORDER,
+        BODY_WITHOUT_BOTTOM_BORDER
     }
 
     static final class TableRowRenderResult {
         final int firstRowNum;
         final int lastRowNum;
         final int lastCol;
+        final List<TableRowStyleRole> rowStyleRoles;
 
-        TableRowRenderResult(int firstRowNum, int lastRowNum, int lastCol) {
+        TableRowRenderResult(int firstRowNum, int lastRowNum, int lastCol, List<TableRowStyleRole> rowStyleRoles) {
+
             this.firstRowNum = firstRowNum;
             this.lastRowNum = lastRowNum;
             this.lastCol = lastCol;
+            this.rowStyleRoles = new ArrayList<TableRowStyleRole>(rowStyleRoles);
+        }
+
+        TableRowStyleRole getStyleRole(int rowNum) {
+            int index = rowNum - firstRowNum;
+
+            if (index < 0 || index >= rowStyleRoles.size()) {
+                throw new IllegalArgumentException("Row is outside table result: " + rowNum);
+            }
+
+            return rowStyleRoles.get(index);
         }
     }
 
     static TableRowRenderResult createTableRows(RenderContext ctx, String line, boolean isHeaderRow, int startCol) {
         List<String> rawCells = splitTableCells(line);
-        if (!isHeaderRow && ctx.st.currentTableEndCol >= startCol) {
-            int headerCellCount = ctx.st.currentTableEndCol - startCol + 1;
+        if (!isHeaderRow && ctx.st.table().getEndCol() >= startCol) {
+
+            int headerCellCount = ctx.st.table().getEndCol() - startCol + 1;
 
             if (rawCells.size() > headerCellCount) {
                 rawCells = new ArrayList<String>(rawCells.subList(0, headerCellCount));
@@ -81,11 +155,26 @@ public final class MarkdownTable {
         int firstRowNum = -1;
         int lastRowNum = -1;
         int lastCol = startCol - 1;
+        List<TableRowStyleRole> rowStyleRoles = new ArrayList<TableRowStyleRole>();
 
         for (int rowOffset = 0; rowOffset < maxRowCount; rowOffset++) {
             Row row = (rowOffset == 0) ? RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st,
                     RowUtil.ReuseKind.TABLE_ROW, ctx.styles.normalStyle)
                     : RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
+
+            boolean hasNextExpandedRow = rowOffset < maxRowCount - 1;
+
+            TableRowStyleRole rowStyleRole;
+
+            if (isHeaderRow) {
+                rowStyleRole = TableRowStyleRole.HEADER;
+            } else if (hasNextExpandedRow) {
+                rowStyleRole = TableRowStyleRole.BODY_WITHOUT_BOTTOM_BORDER;
+            } else {
+                rowStyleRole = TableRowStyleRole.BODY_WITH_BOTTOM_BORDER;
+            }
+
+            rowStyleRoles.add(rowStyleRole);
 
             if (firstRowNum < 0) {
                 firstRowNum = row.getRowNum();
@@ -102,15 +191,14 @@ public final class MarkdownTable {
 
                 if (isHeaderRow) {
                     if (!segments.isEmpty()) {
-                        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, segments, ctx.styles.tableHeaderStyle);
+                        MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, segments,
+                                ctx.styles.tableHeaderStyle);
                     } else {
                         cell.setCellStyle(ctx.styles.tableHeaderStyle);
                     }
                 } else {
-                    boolean hasNextExpandedRow = rowOffset < maxRowCount - 1;
-
                     if (!segments.isEmpty()) {
-                        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, segments,
+                        MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, segments,
                                 hasNextExpandedRow ? ctx.styles.tableBodyLastRowStyle : ctx.styles.tableBodyStyle);
                     } else {
                         cell.setCellStyle(
@@ -124,7 +212,7 @@ public final class MarkdownTable {
             lastCol = Math.max(lastCol, colIndex - 1);
         }
 
-        return new TableRowRenderResult(firstRowNum, lastRowNum, lastCol);
+        return new TableRowRenderResult(firstRowNum, lastRowNum, lastCol, rowStyleRoles);
     }
 
     private static List<String> splitTableCells(String line) {
@@ -198,23 +286,27 @@ public final class MarkdownTable {
         return out.toString();
     }
 
-    public static void closeTableIfOpen(org.apache.poi.ss.usermodel.Sheet sheet, MdStyle styles, RenderState st) {
-        if (!st.lastLineWasTable)
-            return;
+    public static void closeTableIfOpen(Sheet sheet, MdStyleCatalog styles, RenderState st) {
 
-        finalizeTableBorders(sheet, styles, st.currentTableHeaderRow, st.currentTableBodyStartRow,
-                st.currentTableLastBodyRow, st.currentTableStartCol, st.currentTableEndCol);
+        if (!st.lastLineWasTable) {
+            return;
+        }
+
+        TableState table = st.table();
+
+        finalizeTableBorders(sheet, styles, table.getHeaderRow(), table.getBodyStartRow(), table.getLastBodyRow(),
+                table.getStartCol(), table.getEndCol());
+
+        if (table.getLastBodyRow() >= 0) {
+            st.updateBlockQuoteTableRowStyleRole(table.getLastBodyRow(), TableRowStyleRole.BODY_WITHOUT_BOTTOM_BORDER);
+        }
 
         st.lastLineWasTable = false;
-        st.currentTableHeaderRow = -1;
-        st.currentTableBodyStartRow = -1;
-        st.currentTableLastBodyRow = -1;
-        st.currentTableStartCol = 0;
-        st.currentTableEndCol = -1;
+        table.reset();
     }
 
-    private static void finalizeTableBorders(org.apache.poi.ss.usermodel.Sheet sheet, MdStyle styles, int headerRow,
-            int bodyStartRow, int lastBodyRow, int startCol, int endCol) {
+    private static void finalizeTableBorders(Sheet sheet, MdStyleCatalog styles, int headerRow, int bodyStartRow,
+            int lastBodyRow, int startCol, int endCol) {
 
         if (lastBodyRow < 0 || bodyStartRow < 0)
             return;
@@ -226,9 +318,7 @@ public final class MarkdownTable {
             return;
 
         for (int c = startCol; c <= endCol; c++) {
-            Cell cell = row.getCell(c);
-            if (cell == null)
-                cell = row.createCell(c);
+            Cell cell = ExcelCellUtil.getOrCreateCell(row, c);
             cell.setCellStyle(styles.tableBodyLastRowStyle);
         }
     }

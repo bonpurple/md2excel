@@ -1,5 +1,10 @@
 package md2excel.render;
 
+import static md2excel.render.RenderLayout.calcBlockStartCol;
+import static md2excel.render.RenderLayout.calcQuoteStartCol;
+import static md2excel.render.RenderLayout.clampCol;
+import static md2excel.render.RenderLayout.rootCol;
+
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -8,8 +13,8 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 
+import md2excel.excel.ExcelCellUtil;
 import md2excel.excel.Md2ExcelSheetUtil;
-import md2excel.markdown.ListStackUtil;
 import md2excel.markdown.MdTextUtil;
 
 public final class MarkdownRenderer {
@@ -52,7 +57,7 @@ public final class MarkdownRenderer {
         // 引用マーカーを除去した内容を通常と同じ parseContent() で解析した結果。
         final LineInfo quotedContent;
 
-        private LineInfo(String raw, String trimmed, int indent, LineKind kind, int headingLevel, String headingText,
+        LineInfo(String raw, String trimmed, int indent, LineKind kind, int headingLevel, String headingText,
                 boolean endsWithHardBreak, String paragraphText, String listMarkerText, String listContentText,
                 LineInfo quotedContent) {
 
@@ -77,222 +82,35 @@ public final class MarkdownRenderer {
                 return true;
             }
 
-            if (kind == LineKind.BLOCK_QUOTE && quotedContent != null) {
-                return quotedContent.kind == LineKind.TABLE_SEPARATOR || quotedContent.kind == LineKind.TABLE_ROW;
+            if (kind != LineKind.BLOCK_QUOTE) {
+                return false;
             }
 
-            return false;
+            LineInfo content = getInnermostQuotedContent();
+
+            return content != null && (content.kind == LineKind.TABLE_SEPARATOR || content.kind == LineKind.TABLE_ROW);
         }
 
-        static LineInfo parse(String rawLine, RenderState st) {
-            String trimmed = rawLine.trim();
-            int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
+        int getQuoteDepth() {
+            int depth = 0;
+            LineInfo current = this;
 
-            // コードブロック中だけは最優先。
-            if (st.inCodeBlock) {
-
-                // 引用内コードブロックでは、まず引用 marker を1段剥がす。
-                if (st.codeBlockInBlockQuote && trimmed.startsWith(">")) {
-                    String innerRaw = stripOneQuoteMarker(rawLine);
-                    LineInfo inner = parseCodeBlockContent(innerRaw, st);
-
-                    return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null,
-                            inner.endsWithHardBreak, null, null, null, inner);
-                }
-
-                return parseCodeBlockContent(rawLine, st);
+            while (current != null && current.kind == LineKind.BLOCK_QUOTE) {
+                depth++;
+                current = current.quotedContent;
             }
 
-            // 引用は外側のコンテキストとして扱い、
-            // 中身は通常行と同じ classifier に通す。
-            if (trimmed.startsWith(">")) {
-                String innerRaw = stripOneQuoteMarker(rawLine);
-                LineInfo inner = parseContent(innerRaw);
-
-                return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, inner.endsWithHardBreak,
-                        null, null, null, inner);
-            }
-
-            return parseContent(rawLine);
+            return depth;
         }
 
-        private static LineInfo parseCodeBlockContent(String rawLine, RenderState st) {
+        LineInfo getInnermostQuotedContent() {
+            LineInfo current = this;
 
-            String trimmed = rawLine.trim();
-            int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
-
-            if (MdTextUtil.isClosingCodeFenceLine(trimmed, st.codeFenceMarker, st.codeFenceLength)) {
-
-                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, false, null, null, null,
-                        null);
+            while (current != null && current.kind == LineKind.BLOCK_QUOTE) {
+                current = current.quotedContent;
             }
 
-            return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_LINE, -1, null, false, null, null, null, null);
-        }
-
-        /**
-         * 引用かどうかに依存しない、実際の block classifier。
-         */
-        private static LineInfo parseContent(String rawLine) {
-            String trimmed = rawLine.trim();
-            int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
-            boolean endsWithHardBreak = hasLineEndHardBreak(rawLine);
-
-            // block quote は container なので、
-            // 内側も同じ classifier で再帰的に解析する。
-            if (trimmed.startsWith(">")) {
-                String innerRaw = stripOneQuoteMarker(rawLine);
-                LineInfo inner = parseContent(innerRaw);
-
-                return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, inner.endsWithHardBreak,
-                        null, null, null, inner);
-            }
-
-            // code fence
-            if (MdTextUtil.isOpeningCodeFenceLine(trimmed)) {
-                return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, false, null, null, null,
-                        null);
-            }
-
-            // blank
-            if (trimmed.isEmpty()) {
-                return new LineInfo(rawLine, trimmed, indent, LineKind.BLANK, -1, null, false, null, null, null, null);
-            }
-
-            // horizontal rule
-            if (MdTextUtil.isHorizontalRuleLine(trimmed)) {
-                return new LineInfo(rawLine, trimmed, indent, LineKind.HORIZONTAL_RULE, -1, null, false, null, null,
-                        null, null);
-            }
-
-            // table
-            if (MarkdownTable.isTableLine(rawLine)) {
-                boolean separator = MarkdownTable.isTableSeparatorLine(trimmed);
-
-                return new LineInfo(rawLine, trimmed, indent, separator ? LineKind.TABLE_SEPARATOR : LineKind.TABLE_ROW,
-                        -1, null, false, null, null, null, null);
-            }
-
-            // heading
-            if (trimmed.startsWith("#")) {
-                int level = MdTextUtil.countHeadingLevel(trimmed);
-                String text = trimmed.substring(level).trim();
-                text = MdTextUtil.stripHeadingClosingHashes(text);
-                text = stripLineEndHardBreakMarker(text, rawLine);
-
-                return new LineInfo(rawLine, trimmed, indent, LineKind.HEADING, level, text, endsWithHardBreak, null,
-                        null, null, null);
-            }
-
-            // bullet
-            if (trimmed.length() >= 2) {
-                char marker = trimmed.charAt(0);
-
-                if ((marker == '*' || marker == '-' || marker == '+') && Character.isWhitespace(trimmed.charAt(1))) {
-
-                    String content = trimmed.substring(2).trim();
-                    content = stripLineEndHardBreakMarker(content, rawLine);
-
-                    return new LineInfo(rawLine, trimmed, indent, LineKind.BULLET_ITEM, -1, null, endsWithHardBreak,
-                            content, "・ ", content, null);
-                }
-            }
-
-            // numbered list
-            if (MdTextUtil.isNumberedListLine(trimmed)) {
-                int markerEnd = findNumberedListMarkerEnd(trimmed);
-                String markerText = trimmed.substring(0, markerEnd).trim() + " ";
-
-                String content = trimmed.substring(markerEnd).trim();
-                content = stripLineEndHardBreakMarker(content, rawLine);
-
-                return new LineInfo(rawLine, trimmed, indent, LineKind.NUMBER_ITEM, -1, null, endsWithHardBreak,
-                        content, markerText, content, null);
-            }
-
-            // normal
-            String paragraphText = stripLineEndHardBreakMarker(trimmed, rawLine);
-
-            return new LineInfo(rawLine, trimmed, indent, LineKind.NORMAL, -1, null, endsWithHardBreak, paragraphText,
-                    null, null, null);
-        }
-
-        private static String stripOneQuoteMarker(String rawLine) {
-            int i = 0;
-
-            while (i < rawLine.length()) {
-                char ch = rawLine.charAt(i);
-                if (ch == ' ' || ch == '\t') {
-                    i++;
-                    continue;
-                }
-                break;
-            }
-
-            if (i < rawLine.length() && rawLine.charAt(i) == '>') {
-                i++;
-            }
-
-            if (i < rawLine.length() && rawLine.charAt(i) == ' ') {
-                i++;
-            }
-
-            return (i < rawLine.length()) ? rawLine.substring(i) : "";
-        }
-
-        private static boolean hasLineEndHardBreak(String rawLine) {
-            return MdTextUtil.hasHardLineBreakByBackslash(rawLine) || MdTextUtil.hasHardLineBreakBySpaces(rawLine);
-        }
-
-        private static String stripLineEndHardBreakMarker(String text, String rawLine) {
-
-            if (text == null) {
-                return null;
-            }
-
-            if (MdTextUtil.hasHardLineBreakByBackslash(rawLine)) {
-                return MdTextUtil.removeTrailingBackslash(text);
-            }
-
-            return text;
-        }
-
-        private static int findNumberedListMarkerEnd(String trimmed) {
-            if (trimmed == null || trimmed.isEmpty()) {
-                return -1;
-            }
-
-            int n = trimmed.length();
-            int i = 0;
-
-            while (i < n) {
-                char ch = trimmed.charAt(i);
-                if (ch < '0' || ch > '9') {
-                    break;
-                }
-                i++;
-            }
-
-            if (i == 0 || i >= n) {
-                return -1;
-            }
-
-            char marker = trimmed.charAt(i);
-            if (marker != '.' && marker != ')') {
-                return -1;
-            }
-
-            i++;
-
-            if (i >= n || !Character.isWhitespace(trimmed.charAt(i))) {
-                return -1;
-            }
-
-            while (i < n && Character.isWhitespace(trimmed.charAt(i))) {
-                i++;
-            }
-
-            return i;
+            return current;
         }
     }
 
@@ -300,9 +118,14 @@ public final class MarkdownRenderer {
         RenderState st = ctx.st;
         ParagraphBuffer para = null;
 
-        while (it.hasNext()) {
-            String rawLine = it.next();
-            LineInfo li = LineInfo.parse(rawLine, st);
+        LineCursor cursor = new LineCursor(it);
+
+        while (cursor.hasNext()) {
+            String rawLine = cursor.next();
+
+            boolean tableParsingEnabled = shouldEnableTableParsing(rawLine, cursor.peek(), st);
+
+            LineInfo li = MarkdownLineParser.parse(rawLine, st, tableParsingEnabled);
 
             // Setext heading は直前の paragraph と現在行をセットで判定する。
             // underline 行自体は Excel 行として出力しない。
@@ -373,6 +196,10 @@ public final class MarkdownRenderer {
             ParagraphUtil.flush(para, ctx);
         }
 
+        if (st.codeBlock().isOpen()) {
+            finishCodeBlock(ctx);
+        }
+
         if (st.lastLineWasTable) {
             MarkdownTable.closeTableIfOpen(ctx.sheet, ctx.styles, st);
         }
@@ -381,70 +208,68 @@ public final class MarkdownRenderer {
 
     private static void handleCodeFence(LineInfo li, RenderContext ctx) {
 
+        CodeBlockState codeBlock = ctx.st.codeBlock();
+
         // 開始
-        if (!ctx.st.inCodeBlock) {
+        if (!codeBlock.isOpen()) {
             ctx.st.ensureAutoBlankIfPrevBlockQuote(ctx.sheet, ctx.styles.blankRowStyle);
-            ctx.st.currentCodeBlockIndent = li.indent;
 
-            ctx.st.codeFenceMarker = MdTextUtil.getCodeFenceMarker(li.trimmed);
-            ctx.st.codeFenceLength = MdTextUtil.getCodeFenceLength(li.trimmed);
+            codeBlock.open(MdTextUtil.getCodeFenceMarker(li.trimmed), MdTextUtil.getCodeFenceLength(li.trimmed),
+                    li.indent, false, -1);
 
-            ctx.st.inCodeBlock = true;
             ctx.st.lastLineWasTable = false;
-
-            ctx.st.codeBlockFirstRow = -1;
-            ctx.st.codeBlockLastRow = -1;
-            ctx.st.codeBlockCol = 0;
-            ctx.st.codeBlockBaseIndent = -1;
-            ctx.st.codeBlockInBlockQuote = false;
-            ctx.st.codeBlockQuoteStartCol = -1;
             return;
         }
 
         // 終了
-        if (ctx.st.codeBlockFirstRow >= 0 && ctx.st.codeBlockLastRow >= 0) {
-            int fillEndCol = Math.max(ctx.st.codeBlockCol, ctx.st.lastColIndex);
+        finishCodeBlock(ctx);
+    }
 
-            for (int r = ctx.st.codeBlockFirstRow; r <= ctx.st.codeBlockLastRow; r++) {
+    private static void finishCodeBlock(RenderContext ctx) {
+
+        CodeBlockState codeBlock = ctx.st.codeBlock();
+
+        if (codeBlock.hasRenderedLines()) {
+            int fillEndCol = Math.max(codeBlock.getStartCol(), ctx.st.renderLastColIndex);
+
+            for (int r = codeBlock.getFirstRow(); r <= codeBlock.getLastRow(); r++) {
+
                 Row rowObj = ctx.sheet.getRow(r);
-                if (rowObj == null)
+                if (rowObj == null) {
                     continue;
+                }
 
-                for (int c = ctx.st.codeBlockCol; c <= fillEndCol; c++) {
-                    Cell cell = rowObj.getCell(c);
-                    if (cell == null)
-                        cell = rowObj.createCell(c);
+                for (int c = codeBlock.getStartCol(); c <= fillEndCol; c++) {
 
-                    boolean isTop = (r == ctx.st.codeBlockFirstRow);
-                    boolean isBottom = (r == ctx.st.codeBlockLastRow);
-                    boolean isLeft = (c == ctx.st.codeBlockCol);
-                    boolean isRight = (c == fillEndCol);
+                    Cell cell = ExcelCellUtil.getOrCreateCell(rowObj, c);
+
+                    boolean isTop = r == codeBlock.getFirstRow();
+                    boolean isBottom = r == codeBlock.getLastRow();
+                    boolean isLeft = c == codeBlock.getStartCol();
+                    boolean isRight = c == fillEndCol;
 
                     int mask = 0;
-                    if (isTop)
+
+                    if (isTop) {
                         mask |= 1;
-                    if (isBottom)
+                    }
+                    if (isBottom) {
                         mask |= 2;
-                    if (isLeft)
+                    }
+                    if (isLeft) {
                         mask |= 4;
-                    if (isRight)
+                    }
+                    if (isRight) {
                         mask |= 8;
+                    }
 
                     cell.setCellStyle(ctx.styles.codeBlockFrameStyle(mask));
                 }
             }
         }
 
-        ctx.st.inCodeBlock = false;
+        codeBlock.reset();
         ctx.st.lastLineWasTable = false;
-
-        ctx.st.codeFenceMarker = '\0';
-        ctx.st.codeFenceLength = 0;
-
-        ctx.st.codeBlockFirstRow = -1;
-        ctx.st.codeBlockLastRow = -1;
-        ctx.st.codeBlockCol = 0;
-        ctx.st.codeBlockBaseIndent = -1;
     }
 
     private static void handleInCodeBlock(LineInfo li, RenderContext ctx) {
@@ -452,23 +277,20 @@ public final class MarkdownRenderer {
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.CODE_LINE,
                 ctx.styles.normalStyle);
 
-        // 引用ブロックと同じ考え方：
-        // 装飾（塗りつぶし・罫線）は block 開始列から、
-        // 実際のコード本文は 1 列右に置く
-        int frameStartCol = calcBlockStartCol(ctx.st.currentCodeBlockIndent, ctx.st);
+        int openingIndent = ctx.st.codeBlock().getOpeningIndent();
+
+        // 装飾はブロック開始列から、コード本文は1列右へ配置
+        int frameStartCol = calcBlockStartCol(openingIndent, ctx.st);
         int codeCol = clampCol(frameStartCol + 1, ctx.st);
 
-        int leadingSpaces = li.indent;
-        int trimSpaces = ctx.st.computeCodeTrimSpaces(leadingSpaces);
-        String codeLine = li.raw.substring(trimSpaces);
+        String codeLine = MdTextUtil.removeLeadingIndentColumns(li.raw, openingIndent);
+        codeLine = MdTextUtil.expandTabs(codeLine);
 
         Cell cell = row.createCell(codeCol);
-        MarkdownInline.setCodeBlockRichTextCell(ctx.wb, cell, codeLine, ctx.styles.codeBlockStyle);
+        MarkdownInline.setCodeBlockRichTextCell(ctx.fontCache, cell, codeLine, ctx.styles.codeBlockStyle);
 
-        // 枠線・塗りつぶしは frameStartCol から張る
-        ctx.st.recordCodeBlockLinePos(row.getRowNum(), frameStartCol);
+        ctx.st.codeBlock().recordLine(row.getRowNum(), frameStartCol);
 
-        // 直近の内容列としては本文列を保持
         ctx.st.afterWriteCodeLine(codeCol);
     }
 
@@ -480,15 +302,16 @@ public final class MarkdownRenderer {
         Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx, RowUtil.ReuseKind.HORIZONTAL_RULE,
                 ctx.styles.blankRowStyle);
         Md2ExcelSheetUtil.createHorizontalRuleRow(ctx.sheet, row, ctx.styles.horizontalRuleStyle, ctx.st.startColIndex,
-                ctx.st.mergeLastCol);
+                ctx.st.renderEndColExclusive);
         ctx.st.afterWriteHorizontalRule();
     }
 
     private static void handleBlockQuote(LineInfo li, RenderContext ctx) {
 
         int quoteStartCol = calcQuoteStartCol(li.indent, ctx.st);
+        int quoteDepth = Math.max(1, li.getQuoteDepth());
 
-        LineInfo q = li.quotedContent;
+        LineInfo q = li.getInnermostQuotedContent();
 
         if (q == null) {
             throw new AssertionError("Quoted content is missing");
@@ -496,7 +319,7 @@ public final class MarkdownRenderer {
 
         // すでに引用内コードブロック中なら、
         // 通常の block quote 前後処理を通さない。
-        if (ctx.st.codeBlockInBlockQuote) {
+        if (ctx.st.codeBlock().isInBlockQuote()) {
 
             switch (q.kind) {
             case CODE_LINE:
@@ -525,15 +348,15 @@ public final class MarkdownRenderer {
 
         switch (q.kind) {
         case BLANK:
-            handleQuotedBlank(ctx, quoteStartCol);
+            handleQuotedBlank(ctx, quoteStartCol, quoteDepth);
             break;
 
         case HORIZONTAL_RULE:
-            handleQuotedHorizontalRule(ctx, quoteStartCol);
+            handleQuotedHorizontalRule(ctx, quoteStartCol, quoteDepth);
             break;
 
         case HEADING:
-            handleQuotedHeading(q, quoteStartCol, ctx);
+            handleQuotedHeading(q, quoteStartCol, quoteDepth, ctx);
             break;
 
         case CODE_FENCE:
@@ -546,10 +369,13 @@ public final class MarkdownRenderer {
             break;
 
         case TABLE_ROW:
-            MarkdownTable.TableRowRenderResult rr = renderTableRow(q.raw, quoteStartCol, ctx);
+            int tableStartCol = clampCol(quoteStartCol + quoteDepth - 1, ctx.st);
+
+            MarkdownTable.TableRowRenderResult rr = renderTableRow(q.raw, tableStartCol, quoteDepth, ctx);
 
             for (int r = rr.firstRowNum; r <= rr.lastRowNum; r++) {
-                ctx.st.recordBlockQuoteRow(r, quoteStartCol, -1, RenderState.QuoteRowKind.TABLE);
+                ctx.st.recordBlockQuoteTableRow(r, quoteStartCol, tableStartCol, rr.lastCol, quoteDepth,
+                        rr.getStyleRole(r));
             }
 
             ctx.st.lastWasBlockQuote = true;
@@ -565,41 +391,29 @@ public final class MarkdownRenderer {
     }
 
     private static void handleTableRow(LineInfo li, RenderContext ctx) {
-        renderTableRow(li.raw, calcBlockStartCol(li.indent, ctx.st), ctx);
+        renderTableRow(li.raw, calcBlockStartCol(li.indent, ctx.st), 0, ctx);
     }
 
     private static MarkdownTable.TableRowRenderResult renderTableRow(String tableLine, int firstRowStartCol,
-            RenderContext ctx) {
+            int quoteDepth, RenderContext ctx) {
 
-        int tableStartCol;
-        if (ctx.st.currentTableHeaderRow < 0) {
-            tableStartCol = firstRowStartCol;
-            ctx.st.currentTableStartCol = tableStartCol;
-        } else {
-            tableStartCol = ctx.st.currentTableStartCol;
-        }
+        TableState table = ctx.st.table();
 
-        boolean isHeader = (ctx.st.currentTableHeaderRow < 0);
+        boolean isHeader = !table.isOpen();
 
-        MarkdownTable.TableRowRenderResult rr = MarkdownTable.createTableRows(ctx, tableLine, isHeader, tableStartCol);
+        int tableStartCol = isHeader ? firstRowStartCol : table.getStartCol();
+
+        MarkdownTable.TableRowRenderResult result = MarkdownTable.createTableRows(ctx, tableLine, isHeader,
+                tableStartCol);
 
         if (isHeader) {
-            ctx.st.currentTableHeaderRow = rr.firstRowNum;
-            ctx.st.currentTableEndCol = rr.lastCol;
-            ctx.st.currentTableBodyStartRow = -1;
-            ctx.st.currentTableLastBodyRow = -1;
+            table.begin(result.firstRowNum, tableStartCol, result.lastCol, quoteDepth);
         } else {
-            if (ctx.st.currentTableBodyStartRow < 0) {
-                ctx.st.currentTableBodyStartRow = rr.firstRowNum;
-            }
-            ctx.st.currentTableLastBodyRow = rr.lastRowNum;
-            if (rr.lastCol > ctx.st.currentTableEndCol) {
-                ctx.st.currentTableEndCol = rr.lastCol;
-            }
+            table.recordBodyRows(result.firstRowNum, result.lastRowNum, result.lastCol);
         }
 
         ctx.st.afterWriteTableRow(tableStartCol);
-        return rr;
+        return result;
     }
 
     private static void handleHeading(LineInfo li, RenderContext ctx) {
@@ -615,52 +429,18 @@ public final class MarkdownRenderer {
 
         Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
         Cell cell = row.createCell(rootCol(ctx.st));
-        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, lines.get(0), style);
+        MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, lines.get(0), style);
         ctx.st.afterWriteHeading();
 
         for (int i = 1; i < lines.size(); i++) {
             Row r2 = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
             Cell c2 = r2.createCell(rootCol(ctx.st));
-            MarkdownInline.setResolvedSegmentsCell(ctx.wb, c2, lines.get(i), style);
+            MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, c2, lines.get(i), style);
             ctx.st.afterWriteHeading();
         }
     }
 
-    private static int clampCol(int col, RenderState st) {
-        if (col < 0)
-            return 0;
-        if (col >= st.mergeLastCol)
-            return st.mergeLastCol - 1;
-        return col;
-    }
-
-    private static int rootCol(RenderState st) {
-        return clampCol(st.startColIndex, st);
-    }
-
-    private static int calcBlockStartCol(int indent, RenderState st) {
-        if (indent <= 0) {
-            return rootCol(st);
-        }
-
-        int col;
-        if (!st.listStack.isEmpty()) {
-            int depth = ListStackUtil.getDepthForIndent(st.listStack, indent);
-            col = st.startColIndex + 1 + depth;
-        } else {
-            int level = indent / 2;
-            if (level < 0)
-                level = 0;
-            col = st.startColIndex + 1 + level;
-        }
-        return clampCol(col, st);
-    }
-
-    private static int calcQuoteStartCol(int indent, RenderState st) {
-        return clampCol(calcBlockStartCol(indent, st) + 1, st);
-    }
-
-    private static void handleQuotedBlank(RenderContext ctx, int quoteStartCol) {
+    private static void handleQuotedBlank(RenderContext ctx, int quoteStartCol, int quoteDepth) {
 
         ctx.st.resetOnBlockBoundary();
         ctx.st.clearListContext();
@@ -674,10 +454,10 @@ public final class MarkdownRenderer {
             return;
         }
 
-        writeQuotedBlankRow(ctx, quoteStartCol);
+        BlockQuoteRowUtil.writeBlankRow(ctx, quoteStartCol, quoteDepth);
     }
 
-    private static void handleQuotedHorizontalRule(RenderContext ctx, int quoteStartCol) {
+    private static void handleQuotedHorizontalRule(RenderContext ctx, int quoteStartCol, int quoteDepth) {
 
         int previousRowNum = ctx.st.rowIndex - 1;
 
@@ -692,26 +472,29 @@ public final class MarkdownRenderer {
             if (row == null) {
                 row = ctx.sheet.createRow(previousRowNum);
             }
-
         } else {
             row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.blankRowStyle);
 
-            Cell cell = row.createCell(quoteStartCol);
+            int contentCol = clampCol(quoteStartCol + quoteDepth - 1, ctx.st);
 
-            MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, Collections.<MarkdownInline.MdSegment>emptyList(),
-                    ctx.styles.blankRowStyle);
+            Cell cell = row.createCell(contentCol);
 
-            ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, RenderState.QuoteRowKind.HORIZONTAL_RULE);
+            MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell,
+                    Collections.<MarkdownInline.MdSegment>emptyList(), ctx.styles.blankRowStyle);
         }
+
+        // 再利用した行も含め、行種別と引用深度を上書きする。
+        ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, RenderState.QuoteRowKind.HORIZONTAL_RULE,
+                quoteDepth);
 
         ctx.st.afterWriteHorizontalRule();
 
-        // afterWriteHorizontalRule() は通常水平線として
-        // lastWasBlockQuote=false にするので引用コンテキストへ戻す。
+        // afterWriteHorizontalRule()は通常水平線として
+        // lastWasBlockQuote=falseにするため、引用状態へ戻す。
         ctx.st.lastWasBlockQuote = true;
     }
 
-    private static void handleQuotedHeading(LineInfo q, int quoteStartCol, RenderContext ctx) {
+    private static void handleQuotedHeading(LineInfo q, int quoteStartCol, int quoteDepth, RenderContext ctx) {
 
         CellStyle style = resolveHeadingStyle(q.headingLevel, ctx);
 
@@ -722,52 +505,41 @@ public final class MarkdownRenderer {
                     Collections.<MarkdownInline.MdSegment>emptyList());
         }
 
+        int textCol = clampCol(quoteStartCol + quoteDepth - 1, ctx.st);
+        RenderState.QuoteRowKind quoteRowKind = toQuoteHeadingRowKind(q.headingLevel);
+
         for (int i = 0; i < lines.size(); i++) {
             Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
 
-            Cell cell = row.createCell(quoteStartCol);
+            Cell cell = row.createCell(textCol);
 
-            MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, lines.get(i), style);
+            MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, lines.get(i), style);
 
-            ctx.st.afterWriteQuotedHeading(quoteStartCol);
+            ctx.st.afterWriteQuotedHeading(textCol);
 
-            ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, quoteStartCol, RenderState.QuoteRowKind.NORMAL);
+            ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, textCol, quoteRowKind, quoteDepth);
         }
     }
 
     private static void handleQuotedCodeFence(LineInfo q, int quoteStartCol, RenderContext ctx) {
 
+        CodeBlockState codeBlock = ctx.st.codeBlock();
+
         // 開始
-        if (!ctx.st.inCodeBlock) {
-            ctx.st.currentCodeBlockIndent = q.indent;
-
-            ctx.st.codeFenceMarker = MdTextUtil.getCodeFenceMarker(q.trimmed);
-
-            ctx.st.codeFenceLength = MdTextUtil.getCodeFenceLength(q.trimmed);
-
-            ctx.st.inCodeBlock = true;
-            ctx.st.codeBlockInBlockQuote = true;
-            ctx.st.codeBlockQuoteStartCol = quoteStartCol;
+        if (!codeBlock.isOpen()) {
+            codeBlock.open(MdTextUtil.getCodeFenceMarker(q.trimmed), MdTextUtil.getCodeFenceLength(q.trimmed), q.indent,
+                    true, quoteStartCol);
 
             ctx.st.lastLineWasTable = false;
-
-            ctx.st.codeBlockFirstRow = -1;
-            ctx.st.codeBlockLastRow = -1;
-            ctx.st.codeBlockCol = 0;
-            ctx.st.codeBlockBaseIndent = -1;
-
             ctx.st.lastWasBlockQuote = true;
             return;
         }
 
-        // 終了処理・コード枠生成は既存処理を流用する。
-        handleCodeFence(q, ctx);
+        // 終了
+        finishCodeBlock(ctx);
 
-        ctx.st.codeBlockInBlockQuote = false;
-        ctx.st.codeBlockQuoteStartCol = -1;
-
-        // handleCodeFence() は通常コードブロックとして終了するため、
-        // quote context だけ戻す。
+        // finishCodeBlock()は通常コードブロックとして終了するため、
+        // 引用コンテキストだけ戻す。
         ctx.st.lastWasBlockQuote = true;
     }
 
@@ -782,16 +554,16 @@ public final class MarkdownRenderer {
         int frameStartCol = quoteStartCol;
         int codeCol = clampCol(frameStartCol + 1, ctx.st);
 
-        int leadingSpaces = q.indent;
-        int trimSpaces = ctx.st.computeCodeTrimSpaces(leadingSpaces);
+        int trimColumns = ctx.st.codeBlock().getOpeningIndent();
 
-        String codeLine = q.raw.substring(trimSpaces);
+        String codeLine = MdTextUtil.removeLeadingIndentColumns(q.raw, trimColumns);
+        codeLine = MdTextUtil.expandTabs(codeLine);
 
         Cell cell = row.createCell(codeCol);
 
-        MarkdownInline.setCodeBlockRichTextCell(ctx.wb, cell, codeLine, ctx.styles.codeBlockStyle);
+        MarkdownInline.setCodeBlockRichTextCell(ctx.fontCache, cell, codeLine, ctx.styles.codeBlockStyle);
 
-        ctx.st.recordCodeBlockLinePos(row.getRowNum(), frameStartCol);
+        ctx.st.codeBlock().recordLine(row.getRowNum(), frameStartCol);
 
         // 引用終了時にコードstyleを上書きしないため記録。
         ctx.st.afterWriteCodeLine(codeCol);
@@ -808,28 +580,91 @@ public final class MarkdownRenderer {
                         : (headingLevel == 3) ? ctx.styles.heading3Style : ctx.styles.heading4Style;
     }
 
-    private static void writeQuotedBlankRow(RenderContext ctx, int quoteStartCol) {
-        Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.blankRowStyle);
+    private static final class LineCursor {
+        private final Iterator<String> source;
+        private boolean hasBuffered;
+        private String buffered;
 
-        Cell cell = row.createCell(quoteStartCol);
-        MarkdownInline.setResolvedSegmentsCell(ctx.wb, cell, Collections.<MarkdownInline.MdSegment>emptyList(),
-                ctx.styles.blankRowStyle);
+        LineCursor(Iterator<String> source) {
+            this.source = source;
+            advance();
+        }
 
-        ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, RenderState.QuoteRowKind.BLANK);
+        boolean hasNext() {
+            return hasBuffered;
+        }
 
-        ctx.st.lastRowType = RenderState.RowType.BLANK;
-        ctx.st.lastLineWasTable = false;
-        ctx.st.lastBlankFromMarkdown = false;
-        ctx.st.lastBlankRowIndex = -1;
-        ctx.st.lastBlankAfterTable = false;
+        String next() {
+            String current = buffered;
+            advance();
+            return current;
+        }
 
-        ctx.st.lastContentType = RenderState.ContentType.NORMAL;
-        ctx.st.lastContentCol = quoteStartCol;
-        ctx.st.lastContentWasTable = false;
+        String peek() {
+            return hasBuffered ? buffered : null;
+        }
 
-        ctx.st.lastNormalRowIndex = -1;
-        ctx.st.lastNormalIndent = -1;
-        ctx.st.bulletDetailActive = false;
-        ctx.st.lastWasBlockQuote = true;
+        private void advance() {
+            hasBuffered = source.hasNext();
+            buffered = hasBuffered ? source.next() : null;
+        }
+    }
+
+    private static final class TableProbeLine {
+        final int quoteDepth;
+        final String content;
+
+        TableProbeLine(int quoteDepth, String content) {
+            this.quoteDepth = quoteDepth;
+            this.content = content;
+        }
+    }
+
+    private static TableProbeLine unwrapQuoteMarkers(String rawLine) {
+        int quoteDepth = 0;
+        String content = rawLine;
+
+        while (content.trim().startsWith(">")) {
+            content = MarkdownLineParser.stripOneQuoteMarker(content);
+            quoteDepth++;
+        }
+
+        return new TableProbeLine(quoteDepth, content);
+    }
+
+    private static boolean shouldEnableTableParsing(String rawLine, String nextRawLine, RenderState st) {
+
+        TableProbeLine current = unwrapQuoteMarkers(rawLine);
+
+        boolean continuingTable = st.lastLineWasTable && st.table().getQuoteDepth() == current.quoteDepth;
+
+        if (continuingTable) {
+            return true;
+        }
+
+        if (nextRawLine == null) {
+            return false;
+        }
+
+        TableProbeLine next = unwrapQuoteMarkers(nextRawLine);
+
+        return current.quoteDepth == next.quoteDepth && MarkdownTable.isTableStart(current.content, next.content);
+    }
+
+    private static RenderState.QuoteRowKind toQuoteHeadingRowKind(int headingLevel) {
+
+        switch (headingLevel) {
+        case 1:
+            return RenderState.QuoteRowKind.HEADING_1;
+
+        case 2:
+            return RenderState.QuoteRowKind.HEADING_2;
+
+        case 3:
+            return RenderState.QuoteRowKind.HEADING_3;
+
+        default:
+            return RenderState.QuoteRowKind.HEADING_4;
+        }
     }
 }
