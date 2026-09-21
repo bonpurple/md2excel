@@ -43,155 +43,357 @@ public final class MdStyleCatalog {
 
     public final CellStyle blockQuoteHorizontalRuleBodyStyle;
 
-    // mask bit: 1=TOP, 2=BOTTOM, 4=LEFT, 8=RIGHT
-    private final CellStyle[] codeBlockFrameStyles = new CellStyle[16];
+    /*
+     * インデックスはCodeBlockFrameMaskの組み合わせ。 NONEはcodeBlockStyleを直接使用する。
+     */
+    private final CellStyle[] codeBlockFrameStyles;
 
     public MdStyleCatalog(XSSFWorkbook workbook, String fontName, int h1Size, int h2Size, int h3Size, int normalSize,
             VerticalAlignment verticalAlignment) {
 
-        MdFontFactory fonts = new MdFontFactory(workbook);
+        MdFontFactory fontFactory = new MdFontFactory(workbook);
 
-        MdCellStyleFactory styles = new MdCellStyleFactory(workbook);
+        MdCellStyleFactory styleFactory = new MdCellStyleFactory(workbook);
 
-        XSSFCellStyle base = styles.createBase(verticalAlignment);
+        XSSFCellStyle baseStyle = styleFactory.createBase(verticalAlignment);
 
-        // 見出し
-        heading1Style = styles.cloneWithFont(base, fonts.create(fontName, h1Size, true, false));
+        HeadingStyles headings = createHeadingStyles(baseStyle, fontFactory, styleFactory, fontName, h1Size, h2Size,
+                h3Size, normalSize);
 
-        heading2Style = styles.cloneWithFont(base, fonts.create(fontName, h2Size, true, false));
+        heading1Style = headings.heading1;
+        heading2Style = headings.heading2;
+        heading3Style = headings.heading3;
+        heading4Style = headings.heading4;
 
-        heading3Style = styles.cloneWithFont(base, fonts.create(fontName, h3Size, true, false));
+        BasicStyles basic = createBasicStyles(baseStyle, fontFactory, styleFactory, fontName, normalSize);
 
-        heading4Style = styles.cloneWithFont(base, fonts.create(fontName, normalSize, true, false));
+        normalStyle = basic.normal;
+        blankRowStyle = basic.blankRow;
+        bulletStyle = basic.bullet;
+        listStyle = basic.list;
 
-        // 通常・空行・リスト
-        normalStyle = styles.cloneWithFont(base, fonts.create(fontName, normalSize, false, false));
+        XSSFColor codeBackground = styleFactory.color(MdStyleDefaults.CODE_BACKGROUND);
 
-        blankRowStyle = styles.cloneWithFont(base, fonts.create(fontName, 6, false, false));
+        CodeStyles code = createCodeStyles(workbook, baseStyle, fontFactory, styleFactory, codeBackground);
 
-        bulletStyle = styles.cloneOf(normalStyle);
-        listStyle = styles.cloneOf(normalStyle);
+        codeBlockStyle = code.block;
+        codeBlockFrameStyles = code.frameStyles;
 
-        XSSFColor codeBackground = styles.color(MdStyleDefaults.CODE_BACKGROUND);
+        horizontalRuleStyle = createHorizontalRuleStyle(blankRowStyle, styleFactory);
 
-        // コードブロック
-        XSSFCellStyle codeStyle = styles.cloneWithFont(base,
-                fonts.create(MdStyleDefaults.CODE_CJK_FONT_NAME, 10, false, false));
+        TableStyles tables = createTableStyles(baseStyle, fontFactory, styleFactory, fontName, normalSize);
 
-        styles.applyFill(codeStyle, codeBackground);
-        codeBlockStyle = codeStyle;
+        tableHeaderStyle = tables.header;
+        tableBodyStyle = tables.body;
+        tableBodyLastRowStyle = tables.bodyLastRow;
 
-        initCodeBlockFrameStyles(workbook);
+        QuoteStyles quotes = createQuoteStyles(headings, basic, tables, styleFactory, codeBackground);
 
-        // 水平線
-        XSSFCellStyle horizontalRule = styles.cloneOf(blankRowStyle);
+        tableHeaderQuoteStyle = quotes.tableHeader;
 
-        horizontalRule.setBorderBottom(BorderStyle.HAIR);
-        horizontalRuleStyle = horizontalRule;
+        tableBodyQuoteStyle = quotes.tableBody;
 
-        // テーブルヘッダー
-        XSSFCellStyle tableHeader = styles.cloneWithFont(base, fonts.create(fontName, normalSize, true, false));
+        tableBodyLastRowQuoteStyle = quotes.tableBodyLastRow;
 
-        tableHeader.setBorderBottom(BorderStyle.THIN);
-        tableHeaderStyle = tableHeader;
+        blockQuoteLeftStyle = quotes.left;
 
-        // テーブル本文
-        XSSFCellStyle tableBody = styles.cloneWithFont(base, fonts.create(fontName, normalSize, false, false));
+        blockQuoteBodyStyle = quotes.body;
 
-        tableBody.setBorderBottom(BorderStyle.HAIR);
-        tableBodyStyle = tableBody;
+        blockQuoteBlankLeftStyle = quotes.blankLeft;
 
-        XSSFCellStyle tableBodyLast = styles.cloneOf(tableBodyStyle);
+        blockQuoteBlankBodyStyle = quotes.blankBody;
 
-        tableBodyLast.setBorderBottom(BorderStyle.NONE);
-        tableBodyLastRowStyle = tableBodyLast;
+        blockQuoteHeading1Style = quotes.heading1;
 
-        // 引用内見出し
-        blockQuoteHeading1Style = styles.cloneWithFill(heading1Style, codeBackground);
+        blockQuoteHeading2Style = quotes.heading2;
 
-        blockQuoteHeading2Style = styles.cloneWithFill(heading2Style, codeBackground);
+        blockQuoteHeading3Style = quotes.heading3;
 
-        blockQuoteHeading3Style = styles.cloneWithFill(heading3Style, codeBackground);
+        blockQuoteHeading4Style = quotes.heading4;
 
-        blockQuoteHeading4Style = styles.cloneWithFill(heading4Style, codeBackground);
-
-        // 引用内テーブル
-        tableHeaderQuoteStyle = styles.cloneWithFill(tableHeaderStyle, codeBackground);
-
-        tableBodyQuoteStyle = styles.cloneWithFill(tableBodyStyle, codeBackground);
-
-        tableBodyLastRowQuoteStyle = styles.cloneWithFill(tableBodyLastRowStyle, codeBackground);
-
-        // 引用本文
-        XSSFCellStyle quoteBody = styles.cloneWithFill(normalStyle, codeBackground);
-
-        styles.clearBorders(quoteBody);
-        blockQuoteBodyStyle = quoteBody;
-
-        XSSFColor quoteBorder = styles.color(MdStyleDefaults.QUOTE_BORDER);
-
-        XSSFCellStyle quoteLeft = styles.cloneOf(blockQuoteBodyStyle);
-
-        quoteLeft.setBorderLeft(BorderStyle.THICK);
-        quoteLeft.setBorderColor(BorderSide.LEFT, quoteBorder);
-
-        blockQuoteLeftStyle = quoteLeft;
-
-        // 引用空行
-        XSSFCellStyle quoteBlankBody = styles.cloneWithFill(blankRowStyle, codeBackground);
-
-        styles.clearBorders(quoteBlankBody);
-        blockQuoteBlankBodyStyle = quoteBlankBody;
-
-        XSSFCellStyle quoteBlankLeft = styles.cloneOf(blockQuoteBlankBodyStyle);
-
-        quoteBlankLeft.setBorderLeft(BorderStyle.THICK);
-        quoteBlankLeft.setBorderColor(BorderSide.LEFT, quoteBorder);
-
-        blockQuoteBlankLeftStyle = quoteBlankLeft;
-
-        // 引用内水平線
-        XSSFCellStyle quoteHorizontalRule = styles.cloneOf(blockQuoteBlankBodyStyle);
-
-        quoteHorizontalRule.setBorderBottom(BorderStyle.HAIR);
-        blockQuoteHorizontalRuleBodyStyle = quoteHorizontalRule;
+        blockQuoteHorizontalRuleBodyStyle = quotes.horizontalRuleBody;
     }
 
-    private void initCodeBlockFrameStyles(XSSFWorkbook workbook) {
+    private static HeadingStyles createHeadingStyles(CellStyle baseStyle, MdFontFactory fontFactory,
+            MdCellStyleFactory styleFactory, String fontName, int h1Size, int h2Size, int h3Size, int normalSize) {
 
-        for (int mask = 1; mask < codeBlockFrameStyles.length; mask++) {
+        CellStyle heading1 = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, h1Size, true, false));
+
+        CellStyle heading2 = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, h2Size, true, false));
+
+        CellStyle heading3 = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, h3Size, true, false));
+
+        CellStyle heading4 = styleFactory.cloneWithFont(baseStyle,
+                fontFactory.create(fontName, normalSize, true, false));
+
+        return new HeadingStyles(heading1, heading2, heading3, heading4);
+    }
+
+    private static BasicStyles createBasicStyles(CellStyle baseStyle, MdFontFactory fontFactory,
+            MdCellStyleFactory styleFactory, String fontName, int normalSize) {
+
+        CellStyle normal = styleFactory.cloneWithFont(baseStyle,
+                fontFactory.create(fontName, normalSize, false, false));
+
+        CellStyle blankRow = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, 6, false, false));
+
+        CellStyle bullet = styleFactory.cloneOf(normal);
+
+        CellStyle list = styleFactory.cloneOf(normal);
+
+        return new BasicStyles(normal, blankRow, bullet, list);
+    }
+
+    private static CodeStyles createCodeStyles(XSSFWorkbook workbook, CellStyle baseStyle, MdFontFactory fontFactory,
+            MdCellStyleFactory styleFactory, XSSFColor codeBackground) {
+
+        XSSFCellStyle codeBlock = styleFactory.cloneWithFont(baseStyle,
+                fontFactory.create(MdStyleDefaults.CODE_CJK_FONT_NAME, 10, false, false));
+
+        styleFactory.applyFill(codeBlock, codeBackground);
+
+        CellStyle[] frameStyles = createCodeBlockFrameStyles(workbook, codeBlock);
+
+        return new CodeStyles(codeBlock, frameStyles);
+    }
+
+    private static CellStyle createHorizontalRuleStyle(CellStyle blankRowStyle, MdCellStyleFactory styleFactory) {
+
+        XSSFCellStyle horizontalRule = styleFactory.cloneOf(blankRowStyle);
+
+        horizontalRule.setBorderBottom(BorderStyle.HAIR);
+
+        return horizontalRule;
+    }
+
+    private static TableStyles createTableStyles(CellStyle baseStyle, MdFontFactory fontFactory,
+            MdCellStyleFactory styleFactory, String fontName, int normalSize) {
+
+        XSSFCellStyle header = styleFactory.cloneWithFont(baseStyle,
+                fontFactory.create(fontName, normalSize, true, false));
+
+        header.setBorderBottom(BorderStyle.THIN);
+
+        XSSFCellStyle body = styleFactory.cloneWithFont(baseStyle,
+                fontFactory.create(fontName, normalSize, false, false));
+
+        body.setBorderBottom(BorderStyle.HAIR);
+
+        XSSFCellStyle bodyLastRow = styleFactory.cloneOf(body);
+
+        bodyLastRow.setBorderBottom(BorderStyle.NONE);
+
+        return new TableStyles(header, body, bodyLastRow);
+    }
+
+    private static QuoteStyles createQuoteStyles(HeadingStyles headings, BasicStyles basic, TableStyles tables,
+            MdCellStyleFactory styleFactory, XSSFColor codeBackground) {
+
+        /*
+         * 引用内見出し
+         */
+        CellStyle heading1 = styleFactory.cloneWithFill(headings.heading1, codeBackground);
+
+        CellStyle heading2 = styleFactory.cloneWithFill(headings.heading2, codeBackground);
+
+        CellStyle heading3 = styleFactory.cloneWithFill(headings.heading3, codeBackground);
+
+        CellStyle heading4 = styleFactory.cloneWithFill(headings.heading4, codeBackground);
+
+        /*
+         * 引用内テーブル
+         */
+        CellStyle tableHeader = styleFactory.cloneWithFill(tables.header, codeBackground);
+
+        CellStyle tableBody = styleFactory.cloneWithFill(tables.body, codeBackground);
+
+        CellStyle tableBodyLastRow = styleFactory.cloneWithFill(tables.bodyLastRow, codeBackground);
+
+        /*
+         * 引用本文
+         */
+        XSSFCellStyle body = styleFactory.cloneWithFill(basic.normal, codeBackground);
+
+        styleFactory.clearBorders(body);
+
+        XSSFColor quoteBorder = styleFactory.color(MdStyleDefaults.QUOTE_BORDER);
+
+        XSSFCellStyle left = styleFactory.cloneOf(body);
+
+        left.setBorderLeft(BorderStyle.THICK);
+
+        left.setBorderColor(BorderSide.LEFT, quoteBorder);
+
+        /*
+         * 引用空行
+         */
+        XSSFCellStyle blankBody = styleFactory.cloneWithFill(basic.blankRow, codeBackground);
+
+        styleFactory.clearBorders(blankBody);
+
+        XSSFCellStyle blankLeft = styleFactory.cloneOf(blankBody);
+
+        blankLeft.setBorderLeft(BorderStyle.THICK);
+
+        blankLeft.setBorderColor(BorderSide.LEFT, quoteBorder);
+
+        /*
+         * 引用内水平線
+         */
+        XSSFCellStyle horizontalRuleBody = styleFactory.cloneOf(blankBody);
+
+        horizontalRuleBody.setBorderBottom(BorderStyle.HAIR);
+
+        return new QuoteStyles(tableHeader, tableBody, tableBodyLastRow, left, body, blankLeft, blankBody, heading1,
+                heading2, heading3, heading4, horizontalRuleBody);
+    }
+
+    private static CellStyle[] createCodeBlockFrameStyles(XSSFWorkbook workbook, CellStyle codeBlockStyle) {
+
+        CellStyle[] frameStyles = new CellStyle[CodeBlockFrameMask.COMBINATION_COUNT];
+
+        /*
+         * mask == 0の場合はcodeBlockStyleを直接返すため、 frameStyles[0]は使用しない。
+         */
+        for (int mask = CodeBlockFrameMask.TOP; mask < frameStyles.length; mask++) {
+
             XSSFCellStyle style = workbook.createCellStyle();
+
             style.cloneStyleFrom(codeBlockStyle);
 
-            if ((mask & 1) != 0) {
+            if (CodeBlockFrameMask.contains(mask, CodeBlockFrameMask.TOP)) {
+
                 style.setBorderTop(BorderStyle.THIN);
             }
 
-            if ((mask & 2) != 0) {
+            if (CodeBlockFrameMask.contains(mask, CodeBlockFrameMask.BOTTOM)) {
+
                 style.setBorderBottom(BorderStyle.THIN);
             }
 
-            if ((mask & 4) != 0) {
+            if (CodeBlockFrameMask.contains(mask, CodeBlockFrameMask.LEFT)) {
+
                 style.setBorderLeft(BorderStyle.THIN);
             }
 
-            if ((mask & 8) != 0) {
+            if (CodeBlockFrameMask.contains(mask, CodeBlockFrameMask.RIGHT)) {
+
                 style.setBorderRight(BorderStyle.THIN);
             }
 
-            codeBlockFrameStyles[mask] = style;
+            frameStyles[mask] = style;
         }
+
+        return frameStyles;
     }
 
     public CellStyle codeBlockFrameStyle(int mask) {
-        if (mask < 0 || mask >= codeBlockFrameStyles.length) {
+        if (!CodeBlockFrameMask.isValid(mask)) {
             throw new IllegalArgumentException("Invalid code block frame mask: " + mask);
         }
 
-        if (mask == 0) {
+        if (mask == CodeBlockFrameMask.NONE) {
             return codeBlockStyle;
         }
 
         return codeBlockFrameStyles[mask];
+    }
+
+    private static final class HeadingStyles {
+
+        final CellStyle heading1;
+        final CellStyle heading2;
+        final CellStyle heading3;
+        final CellStyle heading4;
+
+        HeadingStyles(CellStyle heading1, CellStyle heading2, CellStyle heading3, CellStyle heading4) {
+
+            this.heading1 = heading1;
+            this.heading2 = heading2;
+            this.heading3 = heading3;
+            this.heading4 = heading4;
+        }
+    }
+
+    private static final class BasicStyles {
+
+        final CellStyle normal;
+        final CellStyle blankRow;
+        final CellStyle bullet;
+        final CellStyle list;
+
+        BasicStyles(CellStyle normal, CellStyle blankRow, CellStyle bullet, CellStyle list) {
+
+            this.normal = normal;
+            this.blankRow = blankRow;
+            this.bullet = bullet;
+            this.list = list;
+        }
+    }
+
+    private static final class CodeStyles {
+
+        final CellStyle block;
+        final CellStyle[] frameStyles;
+
+        CodeStyles(CellStyle block, CellStyle[] frameStyles) {
+
+            this.block = block;
+            this.frameStyles = frameStyles;
+        }
+    }
+
+    private static final class TableStyles {
+
+        final CellStyle header;
+        final CellStyle body;
+        final CellStyle bodyLastRow;
+
+        TableStyles(CellStyle header, CellStyle body, CellStyle bodyLastRow) {
+
+            this.header = header;
+            this.body = body;
+            this.bodyLastRow = bodyLastRow;
+        }
+    }
+
+    private static final class QuoteStyles {
+
+        final CellStyle tableHeader;
+        final CellStyle tableBody;
+        final CellStyle tableBodyLastRow;
+
+        final CellStyle left;
+        final CellStyle body;
+        final CellStyle blankLeft;
+        final CellStyle blankBody;
+
+        final CellStyle heading1;
+        final CellStyle heading2;
+        final CellStyle heading3;
+        final CellStyle heading4;
+
+        final CellStyle horizontalRuleBody;
+
+        QuoteStyles(CellStyle tableHeader, CellStyle tableBody, CellStyle tableBodyLastRow, CellStyle left,
+                CellStyle body, CellStyle blankLeft, CellStyle blankBody, CellStyle heading1, CellStyle heading2,
+                CellStyle heading3, CellStyle heading4, CellStyle horizontalRuleBody) {
+
+            this.tableHeader = tableHeader;
+            this.tableBody = tableBody;
+            this.tableBodyLastRow = tableBodyLastRow;
+
+            this.left = left;
+            this.body = body;
+            this.blankLeft = blankLeft;
+            this.blankBody = blankBody;
+
+            this.heading1 = heading1;
+            this.heading2 = heading2;
+            this.heading3 = heading3;
+            this.heading4 = heading4;
+
+            this.horizontalRuleBody = horizontalRuleBody;
+        }
     }
 }

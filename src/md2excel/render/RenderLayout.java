@@ -1,7 +1,5 @@
 package md2excel.render;
 
-import md2excel.markdown.ListStackUtil;
-
 final class RenderLayout {
 
     private RenderLayout() {
@@ -11,14 +9,16 @@ final class RenderLayout {
         if (col < 0) {
             return 0;
         }
-        if (col >= st.renderEndColExclusive) {
-            return st.renderEndColExclusive - 1;
+
+        if (col >= st.getRenderEndColExclusive()) {
+            return st.getRenderEndColExclusive() - 1;
         }
+
         return col;
     }
 
     static int rootCol(RenderState st) {
-        return clampCol(st.startColIndex, st);
+        return clampCol(st.getStartColIndex(), st);
     }
 
     static int calcBlockStartCol(int indent, RenderState st) {
@@ -28,13 +28,13 @@ final class RenderLayout {
 
         int col;
 
-        if (!st.listStack.isEmpty()) {
-            int depth = ListStackUtil.getDepthForIndent(st.listStack, indent);
+        if (st.hasListLevels()) {
+            int depth = st.getListDepthForIndent(indent);
 
-            col = st.startColIndex + 1 + depth;
+            col = st.getStartColIndex() + 1 + depth;
         } else {
             int level = Math.max(0, indent / 2);
-            col = st.startColIndex + 1 + level;
+            col = st.getStartColIndex() + 1 + level;
         }
 
         return clampCol(col, st);

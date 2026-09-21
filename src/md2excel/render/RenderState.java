@@ -1,15 +1,8 @@
 package md2excel.render;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
-
-import md2excel.markdown.ListStackUtil;
 
 final class RenderState {
 
@@ -31,28 +24,32 @@ final class RenderState {
         OTHER
     }
 
-    final int renderEndColExclusive;
-    final int renderLastColIndex;
+    private final RenderPositionState position;
 
-    final int startRowIndex;
-    final int startColIndex;
+    private final ListRenderState listState = new ListRenderState();
 
-    int rowIndex;
-
-    // リスト
-    final List<ListStackUtil.ListLevel> listStack = new ArrayList<>();
-
-    // 行種別
-    RowType lastRowType = RowType.NONE;
-
-    boolean lastLineWasTable = false;
-
-    boolean lastBlankFromMarkdown = false;
-    int lastBlankRowIndex = -1;
-    boolean lastBlankAfterTable = false;
+    private final BlockQuoteState blockQuoteState = new BlockQuoteState();
 
     private final CodeBlockState codeBlock = new CodeBlockState();
+
     private final TableState table = new TableState();
+
+    // 行種別
+    private RowType lastRowType = RowType.NONE;
+
+    private boolean lastLineWasTable;
+
+    private boolean lastBlankFromMarkdown;
+    private int lastBlankRowIndex = -1;
+    private boolean lastBlankAfterTable;
+
+    // 直前コンテンツ
+    private ContentType lastContentType = ContentType.NONE;
+
+    private boolean lastContentWasTable;
+
+    // 見出し本文
+    private boolean inHeadingParagraphBlock;
 
     CodeBlockState codeBlock() {
         return codeBlock;
@@ -61,40 +58,6 @@ final class RenderState {
     TableState table() {
         return table;
     }
-
-    // 番号付き説明行
-    boolean inNestedNumberBlock = false;
-    int nestedNumberCol;
-    int nestedNumberIndent = 0;
-
-    // 直前コンテンツ
-    ContentType lastContentType = ContentType.NONE;
-    int lastContentCol = 0;
-    boolean lastContentWasTable = false;
-
-    // 見出し本文
-    boolean inHeadingParagraphBlock = false;
-
-    // リストブロック中か
-    boolean inListBlock = false;
-
-    // 直近通常テキスト連結
-    int lastNormalRowIndex = -1;
-    int lastNormalIndent = -1;
-
-    // 引用ブロック
-    boolean inBlockQuote = false;
-    int blockQuoteFirstRow = -1;
-    int blockQuoteLastRow = -1;
-    int blockQuoteCol = 0;
-    boolean lastWasBlockQuote = false;
-    int blockQuoteCellRow = -1;
-    int blockQuoteCellCol = -1;
-
-    // 箇条書き説明行（同一セル追記）
-    boolean bulletDetailActive = false;
-    int bulletDetailRow = -1;
-    int bulletDetailCol = -1;
 
     // =========================
     // 状態遷移をここ1か所に集約
@@ -113,8 +76,6 @@ final class RenderState {
         WRITE_BULLET_ITEM,
         WRITE_NUMBERED_ITEM,
 
-        WRITE_BLOCKQUOTE_LINE,
-
         WRITE_NORMAL_TEXT
     }
 
@@ -132,13 +93,13 @@ final class RenderState {
 
     static final class QuoteRowInfo {
 
-        final QuoteRowKind kind;
-        final int depth;
-        final int contentCol;
+        private final QuoteRowKind kind;
+        private final int depth;
+        private final int contentCol;
 
-        final int tableStartCol;
-        final int tableEndCol;
-        final MarkdownTable.TableRowStyleRole tableRowStyleRole;
+        private final int tableStartCol;
+        private final int tableEndCol;
+        private final MarkdownTable.TableRowStyleRole tableRowStyleRole;
 
         QuoteRowInfo(QuoteRowKind kind, int depth, int contentCol) {
 
@@ -164,30 +125,198 @@ final class RenderState {
         boolean isTableContentColumn(int col) {
             return tableStartCol >= 0 && tableEndCol >= tableStartCol && col >= tableStartCol && col <= tableEndCol;
         }
-    }
 
-    final Map<Integer, QuoteRowInfo> blockQuoteRows = new HashMap<Integer, QuoteRowInfo>();
-
-    RenderState(int mergeCols) {
-        this(mergeCols, 0, 0);
-    }
-
-    RenderState(int sheetColumnCount, int startRowIndex, int startColIndex) {
-
-        this.startRowIndex = Math.max(0, startRowIndex);
-        this.startColIndex = Math.max(0, startColIndex);
-
-        int endColExclusive = sheetColumnCount - this.startColIndex;
-
-        if (endColExclusive <= this.startColIndex) {
-            endColExclusive = this.startColIndex + 1;
+        QuoteRowKind getKind() {
+            return kind;
         }
 
-        this.renderEndColExclusive = endColExclusive;
-        this.renderLastColIndex = endColExclusive - 1;
+        int getDepth() {
+            return depth;
+        }
 
-        this.rowIndex = this.startRowIndex;
-        this.nestedNumberCol = this.startColIndex + 1;
+        int getContentCol() {
+            return contentCol;
+        }
+
+        MarkdownTable.TableRowStyleRole getTableRowStyleRole() {
+            return tableRowStyleRole;
+        }
+    }
+
+    RenderState(SheetColumnLayout columnLayout, int startRowIndex) {
+
+        this.position = new RenderPositionState(columnLayout, startRowIndex);
+    }
+
+    int getRenderEndColExclusive() {
+        return position.getRenderEndColExclusive();
+    }
+
+    int getRenderLastColIndex() {
+        return position.getRenderLastColIndex();
+    }
+
+    int getStartColIndex() {
+        return position.getStartColIndex();
+    }
+
+    int allocateNextRowIndex() {
+        return position.allocateNextRowIndex();
+    }
+
+    int getPreviousRowIndex() {
+        return position.getPreviousRowIndex();
+    }
+
+    boolean isLastRowType(RowType rowType) {
+        return lastRowType == rowType;
+    }
+
+    boolean isLastLineTable() {
+        return lastLineWasTable;
+    }
+
+    boolean isLastBlankAfterTable() {
+        return lastBlankAfterTable;
+    }
+
+    boolean isLastContentType(ContentType contentType) {
+        return lastContentType == contentType;
+    }
+
+    boolean isInHeadingParagraphBlock() {
+        return inHeadingParagraphBlock;
+    }
+
+    boolean canReusePreviousQuotedBlank() {
+        int previousRowIndex = position.getPreviousRowIndex();
+
+        return lastRowType == RowType.BLANK && previousRowIndex >= 0
+                && blockQuoteState.isRowKind(previousRowIndex, QuoteRowKind.BLANK);
+    }
+
+    void afterWriteQuotedBlank(int rowNum, int quoteStartCol, int contentCol, int quoteDepth) {
+
+        recordBlockQuoteRow(rowNum, quoteStartCol, contentCol, QuoteRowKind.BLANK, quoteDepth);
+
+        lastRowType = RowType.BLANK;
+        lastLineWasTable = false;
+
+        // 通常Markdown空行の再利用対象にはしない。
+        lastBlankFromMarkdown = false;
+        lastBlankRowIndex = -1;
+        lastBlankAfterTable = false;
+
+        lastContentType = ContentType.NORMAL;
+        lastContentWasTable = false;
+
+        listState.cutParagraphLinking();
+        blockQuoteState.markLastWasBlockQuote();
+    }
+
+    void afterWriteQuotedHorizontalRule() {
+        apply(Tx.WRITE_HORIZONTAL_RULE, -1, -1, 0, false);
+
+        blockQuoteState.markLastWasBlockQuote();
+    }
+
+    void afterWriteQuotedCodeLine(int col) {
+        apply(Tx.WRITE_CODE_LINE, -1, col, 0, false);
+
+        blockQuoteState.markLastWasBlockQuote();
+    }
+
+    void afterWriteQuotedTableRow(int startCol) {
+        afterWriteTableRow(startCol);
+        blockQuoteState.markLastWasBlockQuote();
+    }
+
+    void afterSkipQuotedTableSeparatorLine() {
+        apply(Tx.SKIP_TABLE_SEPARATOR, -1, -1, 0, false);
+
+        blockQuoteState.markLastWasBlockQuote();
+    }
+
+    void afterWriteTableRow(int startCol) {
+        apply(Tx.WRITE_TABLE_ROW, -1, startCol, 0, false);
+    }
+
+    void afterOpenNormalCodeFence() {
+        lastLineWasTable = false;
+    }
+
+    void afterOpenQuotedCodeFence() {
+        lastLineWasTable = false;
+        blockQuoteState.markLastWasBlockQuote();
+    }
+
+    void afterFinishCodeBlock(boolean quoted) {
+        lastLineWasTable = false;
+
+        if (quoted) {
+            blockQuoteState.markLastWasBlockQuote();
+        }
+    }
+
+    void afterCloseTable() {
+        lastLineWasTable = false;
+        table.reset();
+    }
+
+    int updateListDepth(int indent, boolean ordered) {
+        return listState.updateDepth(indent, ordered);
+    }
+
+    boolean hasListLevels() {
+        return listState.hasLevels();
+    }
+
+    int getListDepthForIndent(int indent) {
+        return listState.getDepthForIndent(indent);
+    }
+
+    int getParentListDepthForChildParagraph() {
+        return listState.getParentDepthForChildParagraph();
+    }
+
+    boolean isInListBlock() {
+        return listState.isInListBlock();
+    }
+
+    boolean wasLastBlockQuote() {
+        return blockQuoteState.wasLastBlockQuote();
+    }
+
+    boolean hasRenderableBlockQuote() {
+        return blockQuoteState.hasRenderableRows();
+    }
+
+    int getBlockQuoteFirstRow() {
+        return blockQuoteState.getFirstRow();
+    }
+
+    int getBlockQuoteLastRow() {
+        return blockQuoteState.getLastRow();
+    }
+
+    int getBlockQuoteStartCol() {
+        return blockQuoteState.getStartCol();
+    }
+
+    void clearBlockQuoteTracking() {
+        blockQuoteState.clearTracking();
+    }
+
+    boolean hasReusableMarkdownBlankForParagraph() {
+        return lastRowType == RowType.BLANK && lastBlankFromMarkdown && lastBlankRowIndex >= 0;
+    }
+
+    boolean hasPreviousReusableMarkdownBlankRow() {
+        return lastRowType == RowType.BLANK && lastBlankFromMarkdown && position.getNextRowIndex() > 0;
+    }
+
+    int getLastBlankRowIndex() {
+        return lastBlankRowIndex;
     }
 
     // 共通（「何かを書いた後」）の固定化。※ lastWasBlockQuote は呼び出し側（Tx）で決める
@@ -201,9 +330,7 @@ final class RenderState {
 
     // 「段落連結/箇条書き説明連結」を切る（安全側）
     private void cutParagraphLinking() {
-        bulletDetailActive = false;
-        lastNormalRowIndex = -1;
-        lastNormalIndent = -1;
+        listState.cutParagraphLinking();
     }
 
     // ここが唯一の「状態遷移ルール本体」
@@ -220,8 +347,9 @@ final class RenderState {
 
         case CONSUME_MARKDOWN_BLANK_NO_ROW:
             lastBlankFromMarkdown = true;
-            if (lastRowType == RowType.BLANK && rowIndex > 0) {
-                lastBlankRowIndex = rowIndex - 1; // 従来仕様：直前BLANKだけ reuse 合わせ
+            if (lastRowType == RowType.BLANK && position.getNextRowIndex() > 0) {
+
+                lastBlankRowIndex = position.getPreviousRowIndex();
             }
             lastBlankAfterTable = lastContentWasTable;
             return;
@@ -229,10 +357,11 @@ final class RenderState {
         case WRITE_AUTO_BLANK:
             lastRowType = RowType.BLANK;
             lastLineWasTable = false;
-            lastBlankFromMarkdown = false; // 重要：reuse 対象にしない
+            lastBlankFromMarkdown = false;
             lastBlankRowIndex = -1;
             lastBlankAfterTable = false;
-            lastWasBlockQuote = false;
+
+            blockQuoteState.markLastWasNotBlockQuote();
             return;
 
         case WRITE_HORIZONTAL_RULE:
@@ -241,8 +370,9 @@ final class RenderState {
             lastBlankFromMarkdown = false;
             lastBlankRowIndex = -1;
             lastBlankAfterTable = false;
-            lastWasBlockQuote = false;
             lastContentWasTable = false;
+
+            blockQuoteState.markLastWasNotBlockQuote();
             return;
 
         case WRITE_HEADING:
@@ -253,148 +383,93 @@ final class RenderState {
             lastBlankAfterTable = false;
 
             lastContentType = ContentType.HEADING;
-            lastContentCol = startColIndex;
             lastContentWasTable = false;
 
             inHeadingParagraphBlock = true;
 
-            // 見出しは「連結」を切る（安全側）
             cutParagraphLinking();
-
-            lastWasBlockQuote = false;
+            blockQuoteState.markLastWasNotBlockQuote();
             return;
 
         case SKIP_TABLE_SEPARATOR:
-            // 「行は書かないが table 中扱い」
             lastRowType = RowType.OTHER;
             lastLineWasTable = true;
             lastBlankFromMarkdown = false;
             lastBlankRowIndex = -1;
             lastBlankAfterTable = false;
-            lastWasBlockQuote = false;
             lastContentWasTable = true;
+
+            blockQuoteState.markLastWasNotBlockQuote();
             return;
 
         case WRITE_TABLE_ROW:
             wroteOtherRow(true);
+
             lastContentType = ContentType.OTHER;
-            lastContentCol = col;
             lastContentWasTable = true;
-            lastWasBlockQuote = false;
+
+            blockQuoteState.markLastWasNotBlockQuote();
             return;
 
         case WRITE_CODE_LINE:
             wroteOtherRow(false);
+
             lastContentType = ContentType.CODE;
-            lastContentCol = col;
             lastContentWasTable = false;
-            lastWasBlockQuote = false;
-            // コード行は連結を切る
+
+            blockQuoteState.markLastWasNotBlockQuote();
+
             cutParagraphLinking();
             return;
 
         case WRITE_BULLET_ITEM:
             wroteOtherRow(false);
-            inNestedNumberBlock = false;
 
             lastContentType = ContentType.BULLET;
-            lastContentCol = col;
             lastContentWasTable = false;
 
-            bulletDetailActive = true;
-            bulletDetailRow = rowNum;
-            bulletDetailCol = col;
-
-            inListBlock = true;
-
-            // 箇条書き開始で通常連結は切る
-            lastNormalRowIndex = -1;
-            lastNormalIndent = -1;
-
-            lastWasBlockQuote = false;
+            listState.afterWriteBulletItem();
+            blockQuoteState.markLastWasNotBlockQuote();
             return;
 
         case WRITE_NUMBERED_ITEM:
             wroteOtherRow(false);
-            bulletDetailActive = false;
-
-            nestedNumberIndent = indent;
-            nestedNumberCol = col;
-            inNestedNumberBlock = true;
 
             lastContentType = ContentType.NUMBER;
-            lastContentCol = col;
             lastContentWasTable = false;
 
-            inListBlock = true;
-
-            lastNormalRowIndex = -1;
-            lastNormalIndent = -1;
-
-            lastWasBlockQuote = false;
-            return;
-
-        case WRITE_BLOCKQUOTE_LINE:
-            wroteOtherRow(false);
-
-            if (!inBlockQuote) {
-                inBlockQuote = true;
-                blockQuoteFirstRow = rowNum;
-                blockQuoteCol = col;
-            }
-            blockQuoteLastRow = rowNum;
-
-            blockQuoteCellRow = rowNum;
-            blockQuoteCellCol = col;
-
-            lastContentType = ContentType.NORMAL; // quote は NORMAL 扱い
-            lastContentCol = col;
-            lastContentWasTable = false;
-
-            lastWasBlockQuote = true;
-
-            // 引用が来たら連結は切る
-            cutParagraphLinking();
+            listState.afterWriteNumberedItem();
+            blockQuoteState.markLastWasNotBlockQuote();
             return;
 
         case WRITE_NORMAL_TEXT:
             wroteOtherRow(false);
 
             lastContentType = ContentType.NORMAL;
-            lastContentCol = col;
             lastContentWasTable = false;
 
-            lastNormalRowIndex = rowNum;
-            lastNormalIndent = indent;
+            blockQuoteState.markLastWasNotBlockQuote();
 
-            lastWasBlockQuote = false;
+            listState.afterWriteNormalText(isListNote, indent);
 
-            if (isListNote)
-                inListBlock = false;
-            if (indent == 0)
-                bulletDetailActive = false;
             return;
         }
     }
 
     void resetOnBlockBoundary() {
-        // 段落境界でリセットしたいもの
-        bulletDetailActive = false;
-        lastNormalRowIndex = -1;
-        lastNormalIndent = -1;
-        // 「見出し本文ブロック」は段落境界で切る
+        listState.resetOnBlockBoundary();
+
+        // 見出し本文ブロックは段落境界で切る。
         inHeadingParagraphBlock = false;
     }
 
-    void clearListContext() {
-        inListBlock = false;
-
-        inNestedNumberBlock = false;
-        nestedNumberIndent = 0;
-        nestedNumberCol = startColIndex + 1;
-
-        // ※ listStack は “インデント深さ計算” に使っているのでここでは消さない
-        // （見出しで listStack を消すと、見出し後のインデント列決定が崩れる可能性があるため）
+    /**
+     * 現在のリストブロックから離脱する。
+     *
+     * リストのインデント階層は、後続行の配置計算に使用するため保持する。
+     */
+    void leaveListBlockPreservingLevels() {
+        listState.leaveBlockPreservingLevels();
     }
 
     void afterWriteMarkdownBlank(int blankRowNum) {
@@ -409,10 +484,6 @@ final class RenderState {
         apply(Tx.WRITE_HEADING, -1, -1, 0, false);
     }
 
-    void afterWriteTableRow(int startCol) {
-        apply(Tx.WRITE_TABLE_ROW, -1, startCol, 0, false);
-    }
-
     void afterWriteCodeLine(int col) {
         apply(Tx.WRITE_CODE_LINE, -1, col, 0, false);
     }
@@ -425,33 +496,13 @@ final class RenderState {
             quoteDecorCol = 0;
         }
 
+        int renderEndColExclusive = position.getRenderEndColExclusive();
+
         if (quoteDecorCol >= renderEndColExclusive) {
             quoteDecorCol = renderEndColExclusive - 1;
         }
 
-        if (!inBlockQuote || blockQuoteFirstRow < 0) {
-            inBlockQuote = true;
-            blockQuoteFirstRow = rowNum;
-            blockQuoteCol = quoteDecorCol;
-        }
-
-        if (quoteDecorCol < blockQuoteCol) {
-            blockQuoteCol = quoteDecorCol;
-        }
-
-        blockQuoteLastRow = rowNum;
-
-        blockQuoteRows.put(Integer.valueOf(rowNum), new QuoteRowInfo(kind, depth, contentCol));
-
-        if (contentCol >= 0) {
-            blockQuoteCellRow = rowNum;
-            blockQuoteCellCol = contentCol;
-        } else {
-            blockQuoteCellRow = -1;
-            blockQuoteCellCol = -1;
-        }
-
-        lastWasBlockQuote = true;
+        blockQuoteState.recordRow(rowNum, quoteDecorCol, new QuoteRowInfo(kind, depth, contentCol));
     }
 
     void recordBlockQuoteRow(int rowNum, int quoteStartCol, int contentCol, QuoteRowKind kind) {
@@ -466,19 +517,13 @@ final class RenderState {
         recordBlockQuoteRow(rowNum, quoteStartCol, tableStartCol, QuoteRowKind.TABLE, quoteDepth);
 
         // テーブル固有の意味情報を含むメタ情報へ置き換える。
-        blockQuoteRows.put(Integer.valueOf(rowNum), new QuoteRowInfo(QuoteRowKind.TABLE, quoteDepth, tableStartCol,
+        blockQuoteState.replaceRowInfo(rowNum, new QuoteRowInfo(QuoteRowKind.TABLE, quoteDepth, tableStartCol,
                 tableStartCol, tableEndCol, tableRowStyleRole));
     }
 
     void updateBlockQuoteTableRowStyleRole(int rowNum, MarkdownTable.TableRowStyleRole tableRowStyleRole) {
 
-        QuoteRowInfo current = blockQuoteRows.get(Integer.valueOf(rowNum));
-
-        if (current == null || current.kind != QuoteRowKind.TABLE) {
-            return;
-        }
-
-        blockQuoteRows.put(Integer.valueOf(rowNum), current.withTableRowStyleRole(tableRowStyleRole));
+        blockQuoteState.updateTableRowStyleRole(rowNum, tableRowStyleRole);
     }
 
     void afterWriteBulletItem(int rowNum, int col) {
@@ -487,10 +532,6 @@ final class RenderState {
 
     void afterWriteNumberedItem(int indent, int col) {
         apply(Tx.WRITE_NUMBERED_ITEM, -1, col, indent, false);
-    }
-
-    void afterWriteBlockQuoteLine(int rowNum, int col) {
-        apply(Tx.WRITE_BLOCKQUOTE_LINE, rowNum, col, 0, false);
     }
 
     void afterWriteNormalText(int rowNum, int col, int indent, boolean isListNote) {
@@ -505,6 +546,12 @@ final class RenderState {
     // 連続空行など「行は増やさない」が Markdown 空行扱いになるケース
     void afterConsumeMarkdownBlankWithoutNewRow() {
         apply(Tx.CONSUME_MARKDOWN_BLANK_NO_ROW, -1, -1, 0, false);
+    }
+
+    // 引用内の空行を、Excel行を追加せずに消費した場合
+    void afterConsumeQuotedMarkdownBlankWithoutNewRow() {
+        afterConsumeMarkdownBlankWithoutNewRow();
+        blockQuoteState.markLastWasBlockQuote();
     }
 
     // テーブルの区切り行（|---|---|）は「行を書かないが table 中扱い」にする
@@ -526,7 +573,7 @@ final class RenderState {
 
     /** 見出し前の自動空行：必要なときだけ入れる（従来仕様） */
     void ensureAutoBlankBeforeHeadingIfNeeded(Sheet sheet, CellStyle normalRowStyle) {
-        if (rowIndex > startRowIndex && lastRowType != RowType.BLANK) {
+        if (position.hasWrittenRows() && lastRowType != RowType.BLANK) {
             writeAutoBlank(sheet, normalRowStyle);
         }
     }
@@ -540,7 +587,9 @@ final class RenderState {
 
     /** 「直前が引用なら空行を1つ入れる」仕様 */
     void ensureAutoBlankIfPrevBlockQuote(Sheet sheet, CellStyle normalRowStyle) {
-        if (lastWasBlockQuote && lastRowType != RowType.BLANK) {
+
+        if (blockQuoteState.wasLastBlockQuote() && lastRowType != RowType.BLANK) {
+
             writeAutoBlank(sheet, normalRowStyle);
         }
     }
@@ -556,31 +605,22 @@ final class RenderState {
         boolean prevNeedsSeparator = lastContentType == ContentType.NORMAL || lastContentType == ContentType.BULLET
                 || lastContentType == ContentType.NUMBER || lastContentType == ContentType.HEADING;
 
-        if (!inBlockQuote && !lastWasBlockQuote && rowIndex > startRowIndex && lastRowType != RowType.BLANK
-                && prevNeedsSeparator) {
+        if (!blockQuoteState.isOpen() && !blockQuoteState.wasLastBlockQuote() && position.hasWrittenRows()
+                && lastRowType != RowType.BLANK && prevNeedsSeparator) {
             writeAutoBlank(sheet, blankRowStyle);
         }
     }
 
     /** 直前のネストしたリスト（またはその説明行）が終わり、浅い階層のリストへ戻るか。 */
     boolean shouldInsertAutoBlankBeforeChildList(int currentIndent) {
+
         if (lastRowType == RowType.BLANK) {
             return false;
         }
 
-        if (listStack.isEmpty()) {
-            return false;
-        }
+        boolean previousContentIsList = lastContentType == ContentType.BULLET || lastContentType == ContentType.NUMBER;
 
-        int prevIndent = listStack.get(listStack.size() - 1).indent;
-        if (currentIndent >= prevIndent) {
-            return false;
-        }
-
-        boolean cameFromNestedListContent = lastContentType == ContentType.BULLET
-                || lastContentType == ContentType.NUMBER || bulletDetailActive || inNestedNumberBlock;
-
-        return cameFromNestedListContent;
+        return listState.shouldInsertAutoBlankBeforeChildList(currentIndent, previousContentIsList);
     }
 
     /** 直前のネストしたリスト（またはその説明行）が終わり、浅い階層のリストへ戻る場合は自動空行を1行入れる。 */
@@ -596,29 +636,21 @@ final class RenderState {
         afterWriteAutoBlank(row.getRowNum());
     }
 
-    void afterWriteQuotedHeading(int col) {
+    void afterWriteQuotedHeading() {
         apply(Tx.WRITE_HEADING, -1, -1, 0, false);
 
-        lastContentCol = col;
-
-        // 通常見出し用の「直後の通常段落」状態を引用外へ漏らさない。
+        // 通常見出し用の状態を引用外へ漏らさない。
         inHeadingParagraphBlock = false;
 
-        lastWasBlockQuote = true;
+        blockQuoteState.markLastWasBlockQuote();
     }
 
     QuoteRowInfo getBlockQuoteRowInfo(int rowNum) {
-        return blockQuoteRows.get(Integer.valueOf(rowNum));
+        return blockQuoteState.getRowInfo(rowNum);
     }
 
     boolean isBlockQuoteRowKind(int rowNum, QuoteRowKind kind) {
 
-        QuoteRowInfo info = getBlockQuoteRowInfo(rowNum);
-
-        return info != null && info.kind == kind;
-    }
-
-    void clearBlockQuoteRows() {
-        blockQuoteRows.clear();
+        return blockQuoteState.isRowKind(rowNum, kind);
     }
 }

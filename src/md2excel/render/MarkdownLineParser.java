@@ -1,8 +1,9 @@
 package md2excel.render;
 
+import md2excel.markdown.CodeFence;
+import md2excel.markdown.LineInfo;
 import md2excel.markdown.MdTextUtil;
-import md2excel.render.MarkdownRenderer.LineInfo;
-import md2excel.render.MarkdownRenderer.LineKind;
+import md2excel.markdown.NumberedListMarker;
 
 final class MarkdownLineParser {
 
@@ -11,33 +12,40 @@ final class MarkdownLineParser {
 
     static LineInfo parse(String rawLine, RenderState st, boolean tableParsingEnabled) {
 
-        String trimmed = rawLine.trim();
-        int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
-
-        // コードブロック中は最優先
         if (st.codeBlock().isOpen()) {
-            if (st.codeBlock().isInBlockQuote() && trimmed.startsWith(">")) {
-
-                String innerRaw = stripOneQuoteMarker(rawLine);
-                LineInfo inner = parseCodeBlockContent(innerRaw, st);
-
-                return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, inner.endsWithHardBreak,
-                        null, null, null, inner);
+            if (st.codeBlock().isInBlockQuote()) {
+                return parseQuotedCodeBlockLine(rawLine, st);
             }
 
             return parseCodeBlockContent(rawLine, st);
         }
 
-        // 引用は外側のコンテキストとして扱う
-        if (trimmed.startsWith(">")) {
-            String innerRaw = stripOneQuoteMarker(rawLine);
-            LineInfo inner = parseContent(innerRaw, tableParsingEnabled);
+        QuotePrefix quote = unwrapQuoteMarkers(rawLine, Integer.MAX_VALUE);
 
-            return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, inner.endsWithHardBreak, null,
-                    null, null, inner);
+        if (quote.depth > 0) {
+            LineInfo content = parseContent(quote.contentRaw, tableParsingEnabled);
+
+            return LineInfo.quoted(rawLine, rawLine.trim(), MdTextUtil.countLeadingSpacesOrTabs(rawLine), quote.depth,
+                    content);
         }
 
         return parseContent(rawLine, tableParsingEnabled);
+    }
+
+    private static LineInfo parseQuotedCodeBlockLine(String rawLine, RenderState st) {
+
+        int openingQuoteDepth = st.codeBlock().getQuoteDepth();
+
+        QuotePrefix quote = unwrapQuoteMarkers(rawLine, openingQuoteDepth);
+
+        LineInfo content = parseCodeBlockContent(quote.contentRaw, st);
+
+        if (quote.depth == 0) {
+            return content;
+        }
+
+        return LineInfo.quoted(rawLine, rawLine.trim(), MdTextUtil.countLeadingSpacesOrTabs(rawLine), quote.depth,
+                content);
     }
 
     private static LineInfo parseCodeBlockContent(String rawLine, RenderState st) {
@@ -45,13 +53,12 @@ final class MarkdownLineParser {
         String trimmed = rawLine.trim();
         int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
 
-        if (MdTextUtil.isClosingCodeFenceLine(trimmed, st.codeBlock().getFenceMarker(),
-                st.codeBlock().getFenceLength())) {
+        if (CodeFence.isClosingLine(trimmed, st.codeBlock().getFenceMarker(), st.codeBlock().getFenceLength())) {
 
-            return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, false, null, null, null, null);
+            return LineInfo.codeFence(rawLine, trimmed, indent);
         }
 
-        return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_LINE, -1, null, false, null, null, null, null);
+        return LineInfo.codeLine(rawLine, trimmed, indent);
     }
 
     private static LineInfo parseContent(String rawLine, boolean tableParsingEnabled) {
@@ -60,29 +67,19 @@ final class MarkdownLineParser {
         int indent = MdTextUtil.countLeadingSpacesOrTabs(rawLine);
         boolean endsWithHardBreak = hasLineEndHardBreak(rawLine);
 
-        // nested quote
-        if (trimmed.startsWith(">")) {
-            String innerRaw = stripOneQuoteMarker(rawLine);
-            LineInfo inner = parseContent(innerRaw, tableParsingEnabled);
-
-            return new LineInfo(rawLine, trimmed, indent, LineKind.BLOCK_QUOTE, -1, null, inner.endsWithHardBreak, null,
-                    null, null, inner);
-        }
-
         // code fence
-        if (MdTextUtil.isOpeningCodeFenceLine(trimmed)) {
-            return new LineInfo(rawLine, trimmed, indent, LineKind.CODE_FENCE, -1, null, false, null, null, null, null);
+        if (CodeFence.parseOpening(trimmed) != null) {
+            return LineInfo.codeFence(rawLine, trimmed, indent);
         }
 
         // blank
         if (trimmed.isEmpty()) {
-            return new LineInfo(rawLine, trimmed, indent, LineKind.BLANK, -1, null, false, null, null, null, null);
+            return LineInfo.blank(rawLine, trimmed, indent);
         }
 
         // horizontal rule
         if (MdTextUtil.isHorizontalRuleLine(trimmed)) {
-            return new LineInfo(rawLine, trimmed, indent, LineKind.HORIZONTAL_RULE, -1, null, false, null, null, null,
-                    null);
+            return LineInfo.horizontalRule(rawLine, trimmed, indent);
         }
 
         // table
@@ -90,8 +87,8 @@ final class MarkdownLineParser {
 
             boolean separator = MarkdownTable.isTableSeparatorLine(trimmed);
 
-            return new LineInfo(rawLine, trimmed, indent, separator ? LineKind.TABLE_SEPARATOR : LineKind.TABLE_ROW, -1,
-                    null, false, null, null, null, null);
+            return separator ? LineInfo.tableSeparator(rawLine, trimmed, indent)
+                    : LineInfo.tableRow(rawLine, trimmed, indent);
         }
 
         // heading
@@ -102,8 +99,7 @@ final class MarkdownLineParser {
             text = MdTextUtil.stripHeadingClosingHashes(text);
             text = stripLineEndHardBreakMarker(text, rawLine);
 
-            return new LineInfo(rawLine, trimmed, indent, LineKind.HEADING, level, text, endsWithHardBreak, null, null,
-                    null, null);
+            return LineInfo.heading(rawLine, trimmed, indent, level, text, endsWithHardBreak);
         }
 
         // bullet list
@@ -115,29 +111,26 @@ final class MarkdownLineParser {
                 String content = trimmed.substring(2).trim();
                 content = stripLineEndHardBreakMarker(content, rawLine);
 
-                return new LineInfo(rawLine, trimmed, indent, LineKind.BULLET_ITEM, -1, null, endsWithHardBreak,
-                        content, "・ ", content, null);
+                return LineInfo.bulletItem(rawLine, trimmed, indent, "・ ", content, endsWithHardBreak);
             }
         }
 
         // numbered list
-        if (MdTextUtil.isNumberedListLine(trimmed)) {
-            int markerEnd = findNumberedListMarkerEnd(trimmed);
+        NumberedListMarker numberedMarker = NumberedListMarker.parse(trimmed);
 
-            String markerText = trimmed.substring(0, markerEnd).trim() + " ";
+        if (numberedMarker != null) {
+            String content = trimmed.substring(numberedMarker.getContentStartIndex()).trim();
 
-            String content = trimmed.substring(markerEnd).trim();
             content = stripLineEndHardBreakMarker(content, rawLine);
 
-            return new LineInfo(rawLine, trimmed, indent, LineKind.NUMBER_ITEM, -1, null, endsWithHardBreak, content,
-                    markerText, content, null);
+            return LineInfo.numberItem(rawLine, trimmed, indent, numberedMarker.getMarkerText(), content,
+                    endsWithHardBreak);
         }
 
         // normal paragraph
         String paragraphText = stripLineEndHardBreakMarker(trimmed, rawLine);
 
-        return new LineInfo(rawLine, trimmed, indent, LineKind.NORMAL, -1, null, endsWithHardBreak, paragraphText, null,
-                null, null);
+        return LineInfo.normal(rawLine, trimmed, indent, paragraphText, endsWithHardBreak);
     }
 
     static String stripOneQuoteMarker(String rawLine) {
@@ -182,44 +175,29 @@ final class MarkdownLineParser {
         return text;
     }
 
-    private static int findNumberedListMarkerEnd(String trimmed) {
+    private static final class QuotePrefix {
 
-        if (trimmed == null || trimmed.isEmpty()) {
-            return -1;
+        final int depth;
+        final String contentRaw;
+
+        QuotePrefix(int depth, String contentRaw) {
+
+            this.depth = depth;
+            this.contentRaw = contentRaw;
+        }
+    }
+
+    private static QuotePrefix unwrapQuoteMarkers(String rawLine, int maxDepth) {
+
+        int depth = 0;
+        String content = rawLine;
+
+        while (depth < maxDepth && content.trim().startsWith(">")) {
+
+            content = stripOneQuoteMarker(content);
+            depth++;
         }
 
-        int length = trimmed.length();
-        int index = 0;
-
-        while (index < length) {
-            char ch = trimmed.charAt(index);
-
-            if (ch < '0' || ch > '9') {
-                break;
-            }
-
-            index++;
-        }
-
-        if (index == 0 || index >= length) {
-            return -1;
-        }
-
-        char marker = trimmed.charAt(index);
-        if (marker != '.' && marker != ')') {
-            return -1;
-        }
-
-        index++;
-
-        if (index >= length || !Character.isWhitespace(trimmed.charAt(index))) {
-            return -1;
-        }
-
-        while (index < length && Character.isWhitespace(trimmed.charAt(index))) {
-            index++;
-        }
-
-        return index;
+        return new QuotePrefix(depth, content);
     }
 }

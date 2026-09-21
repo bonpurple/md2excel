@@ -9,6 +9,7 @@ import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFRichTextString;
 
+import md2excel.markdown.MdCharUtil;
 import md2excel.markdown.MdInlineCodeUtil;
 import md2excel.markdown.MdTextUtil;
 
@@ -144,7 +145,7 @@ public final class MarkdownInline {
         }
     }
 
-    // package-private: Renderer / Table / CellAppendUtil から使う
+    // package-private: Renderer / Table から使う
     static void setResolvedSegmentsCell(MarkdownFontCache fontCache, Cell cell, List<MdSegment> segments,
             CellStyle baseStyle) {
 
@@ -349,7 +350,7 @@ public final class MarkdownInline {
     }
 
     private static boolean isBackslashEscapable(char ch) {
-        return isAsciiPunctuation(ch);
+        return MdCharUtil.isAsciiPunctuation(ch);
     }
 
     private static void flushTextToken(List<InlineToken> tokens, StringBuilder textBuf) {
@@ -403,23 +404,16 @@ public final class MarkdownInline {
     }
 
     private static boolean isPunctuationChar(char ch) {
-        if (isAsciiPunctuation(ch)) {
+        if (MdCharUtil.isAsciiPunctuation(ch)) {
             return true;
         }
 
-        int t = Character.getType(ch);
-        return t == Character.CONNECTOR_PUNCTUATION || t == Character.DASH_PUNCTUATION
-                || t == Character.START_PUNCTUATION || t == Character.END_PUNCTUATION
-                || t == Character.INITIAL_QUOTE_PUNCTUATION || t == Character.FINAL_QUOTE_PUNCTUATION
-                || t == Character.OTHER_PUNCTUATION;
-    }
+        int type = Character.getType(ch);
 
-    private static boolean isAsciiPunctuation(char ch) {
-        if (ch > 0x7F) {
-            return false;
-        }
-        return (ch >= '!' && ch <= '/') || (ch >= ':' && ch <= '@') || (ch >= '[' && ch <= '`')
-                || (ch >= '{' && ch <= '~');
+        return type == Character.CONNECTOR_PUNCTUATION || type == Character.DASH_PUNCTUATION
+                || type == Character.START_PUNCTUATION || type == Character.END_PUNCTUATION
+                || type == Character.INITIAL_QUOTE_PUNCTUATION || type == Character.FINAL_QUOTE_PUNCTUATION
+                || type == Character.OTHER_PUNCTUATION;
     }
 
     private static void resolveEmphasis(List<InlineToken> tokens, char marker) {
@@ -817,28 +811,6 @@ public final class MarkdownInline {
         }
 
         return out;
-    }
-
-    private static String segmentsToPlainText(List<MdSegment> segments) {
-        if (segments == null || segments.isEmpty()) {
-            return "";
-        }
-
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < segments.size(); i++) {
-            sb.append(segments.get(i).text);
-        }
-        return sb.toString();
-    }
-
-    public static boolean hasBrOutsideInlineCode(String markdownText) {
-        return parseParagraphToDisplayLines(markdownText).size() >= 2;
-    }
-
-    // 互換用。書式は落ちるので、新規コードでは parseParagraphToSingleLineSegments +
-    // setResolvedSegmentsCell を使うこと。
-    public static String brToSingleSpace(String markdownText) {
-        return segmentsToPlainText(parseParagraphToSingleLineSegments(markdownText));
     }
 
     private static String normalizeCodeSpanContent(String code) {

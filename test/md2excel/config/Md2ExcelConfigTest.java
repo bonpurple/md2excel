@@ -1,7 +1,11 @@
 package md2excel.config;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.fail;
+
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.junit.Test;
@@ -9,72 +13,92 @@ import org.junit.Test;
 public class Md2ExcelConfigTest {
 
     @Test
-    public void acceptsValidConfigurationAndTrimsText() {
-        Md2ExcelConfig config = new Md2ExcelConfig(" input.md ", " output.xlsx ", 40, " Meiryo ", 16, 14, 12, 11,
-                VerticalAlignment.BOTTOM);
+    public void acceptsValidConfiguration() {
+        Path inputPath = Paths.get("input.md");
 
-        assertEquals("input.md", config.inPath);
-        assertEquals("output.xlsx", config.outPath);
-        assertEquals("Meiryo", config.fontName);
-        assertEquals(40, config.sheetColumnCount);
-        assertEquals(16, config.h1Size);
-        assertEquals(11, config.normalSize);
+        Path outputPath = Paths.get("output.xlsx");
+
+        MdFontSettings fontSettings = new MdFontSettings("Meiryo", 16, 14, 12, 11);
+
+        MdSheetSettings sheetSettings = new MdSheetSettings(40, VerticalAlignment.BOTTOM);
+
+        Md2ExcelConfig config = new Md2ExcelConfig(inputPath, outputPath, fontSettings, sheetSettings);
+
+        assertEquals(inputPath, config.getInputPath());
+
+        assertEquals(outputPath, config.getOutputPath());
+
+        assertSame(fontSettings, config.getFontSettings());
+
+        assertSame(sheetSettings, config.getSheetSettings());
     }
 
     @Test
-    public void rejectsTooFewColumns() {
+    public void rejectsNullInputPath() {
         assertInvalid(new Runnable() {
             @Override
             public void run() {
-                createConfig(Md2ExcelConfig.MIN_SHEET_COLUMN_COUNT - 1, 11);
+                new Md2ExcelConfig(null, Paths.get("output.xlsx"), validFontSettings(), validSheetSettings());
             }
         });
     }
 
     @Test
-    public void rejectsTooManyColumns() {
+    public void rejectsEmptyInputPath() {
         assertInvalid(new Runnable() {
             @Override
             public void run() {
-                createConfig(Md2ExcelConfig.MAX_SHEET_COLUMN_COUNT + 1, 11);
+                new Md2ExcelConfig(Paths.get(""), Paths.get("output.xlsx"), validFontSettings(), validSheetSettings());
             }
         });
     }
 
     @Test
-    public void rejectsFontSizeBelowMinimum() {
+    public void rejectsNullOutputPath() {
         assertInvalid(new Runnable() {
             @Override
             public void run() {
-                createConfig(40, Md2ExcelConfig.MIN_FONT_SIZE - 1);
+                new Md2ExcelConfig(Paths.get("input.md"), null, validFontSettings(), validSheetSettings());
             }
         });
     }
 
     @Test
-    public void rejectsFontSizeAboveMaximum() {
+    public void rejectsEmptyOutputPath() {
         assertInvalid(new Runnable() {
             @Override
             public void run() {
-                createConfig(40, Md2ExcelConfig.MAX_FONT_SIZE + 1);
+                new Md2ExcelConfig(Paths.get("input.md"), Paths.get(""), validFontSettings(), validSheetSettings());
             }
         });
     }
 
     @Test
-    public void rejectsNullVerticalAlignment() {
+    public void rejectsNullFontSettings() {
         assertInvalid(new Runnable() {
             @Override
             public void run() {
-                new Md2ExcelConfig("input.md", "output.xlsx", 40, "Meiryo", 16, 14, 12, 11, null);
+                new Md2ExcelConfig(Paths.get("input.md"), Paths.get("output.xlsx"), null, validSheetSettings());
             }
         });
     }
 
-    private static Md2ExcelConfig createConfig(int columns, int normalSize) {
+    @Test
+    public void rejectsNullSheetSettings() {
+        assertInvalid(new Runnable() {
+            @Override
+            public void run() {
+                new Md2ExcelConfig(Paths.get("input.md"), Paths.get("output.xlsx"), validFontSettings(), null);
+            }
+        });
+    }
 
-        return new Md2ExcelConfig("input.md", "output.xlsx", columns, "Meiryo", 16, 14, 12, normalSize,
-                VerticalAlignment.BOTTOM);
+    private static MdFontSettings validFontSettings() {
+        return new MdFontSettings("Meiryo", 16, 14, 12, 11);
+    }
+
+    private static MdSheetSettings validSheetSettings() {
+        return new MdSheetSettings(40, VerticalAlignment.BOTTOM);
     }
 
     private static void assertInvalid(Runnable action) {

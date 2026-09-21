@@ -14,6 +14,7 @@ final class CodeBlockState {
 
     private boolean inBlockQuote;
     private int quoteStartCol = -1;
+    private int quoteDepth;
 
     boolean isOpen() {
         return open;
@@ -51,11 +52,16 @@ final class CodeBlockState {
         return quoteStartCol;
     }
 
+    int getQuoteDepth() {
+        return quoteDepth;
+    }
+
     boolean hasRenderedLines() {
         return firstRow >= 0 && lastRow >= 0;
     }
 
-    void open(char fenceMarker, int fenceLength, int openingIndent, boolean inBlockQuote, int quoteStartCol) {
+    void open(char fenceMarker, int fenceLength, int openingIndent, boolean inBlockQuote, int quoteStartCol,
+            int quoteDepth) {
 
         this.open = true;
         this.fenceMarker = fenceMarker;
@@ -67,7 +73,9 @@ final class CodeBlockState {
         this.startCol = 0;
 
         this.inBlockQuote = inBlockQuote;
-        this.quoteStartCol = quoteStartCol;
+        this.quoteStartCol = inBlockQuote ? quoteStartCol : -1;
+
+        this.quoteDepth = inBlockQuote ? Math.max(1, quoteDepth) : 0;
     }
 
     void recordLine(int rowNum, int startCol) {
@@ -92,5 +100,6 @@ final class CodeBlockState {
 
         inBlockQuote = false;
         quoteStartCol = -1;
+        quoteDepth = 0;
     }
 }

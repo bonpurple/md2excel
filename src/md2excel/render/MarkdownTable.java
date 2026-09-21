@@ -288,25 +288,24 @@ public final class MarkdownTable {
 
     public static void closeTableIfOpen(Sheet sheet, MdStyleCatalog styles, RenderState st) {
 
-        if (!st.lastLineWasTable) {
+        if (!st.isLastLineTable()) {
             return;
         }
 
         TableState table = st.table();
 
-        finalizeTableBorders(sheet, styles, table.getHeaderRow(), table.getBodyStartRow(), table.getLastBodyRow(),
-                table.getStartCol(), table.getEndCol());
+        finalizeTableBorders(sheet, styles, table.getBodyStartRow(), table.getLastBodyRow(), table.getStartCol(),
+                table.getEndCol());
 
         if (table.getLastBodyRow() >= 0) {
             st.updateBlockQuoteTableRowStyleRole(table.getLastBodyRow(), TableRowStyleRole.BODY_WITHOUT_BOTTOM_BORDER);
         }
 
-        st.lastLineWasTable = false;
-        table.reset();
+        st.afterCloseTable();
     }
 
-    private static void finalizeTableBorders(Sheet sheet, MdStyleCatalog styles, int headerRow, int bodyStartRow,
-            int lastBodyRow, int startCol, int endCol) {
+    private static void finalizeTableBorders(Sheet sheet, MdStyleCatalog styles, int bodyStartRow, int lastBodyRow,
+            int startCol, int endCol) {
 
         if (lastBodyRow < 0 || bodyStartRow < 0)
             return;

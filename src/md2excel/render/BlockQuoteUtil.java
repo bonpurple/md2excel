@@ -13,25 +13,16 @@ public final class BlockQuoteUtil {
     }
 
     public static void closeBlockQuoteIfOpen(Sheet sheet, MdStyleCatalog styles, RenderState st) {
-        if (!st.inBlockQuote) {
-            st.clearBlockQuoteRows();
-            return;
-        }
-        if (st.blockQuoteFirstRow < 0 || st.blockQuoteLastRow < 0) {
-            st.clearBlockQuoteRows();
+
+        if (!st.hasRenderableBlockQuote()) {
+            st.clearBlockQuoteTracking();
             return;
         }
 
-        applyBlockQuoteStyle(sheet, styles, st, st.blockQuoteFirstRow, st.blockQuoteLastRow, st.blockQuoteCol,
-                st.renderLastColIndex);
+        applyBlockQuoteStyle(sheet, styles, st, st.getBlockQuoteFirstRow(), st.getBlockQuoteLastRow(),
+                st.getBlockQuoteStartCol(), st.getRenderLastColIndex());
 
-        st.inBlockQuote = false;
-        st.blockQuoteFirstRow = -1;
-        st.blockQuoteLastRow = -1;
-        st.blockQuoteCellRow = -1;
-        st.blockQuoteCellCol = -1;
-
-        st.clearBlockQuoteRows();
+        st.clearBlockQuoteTracking();
     }
 
     private static void applyBlockQuoteStyle(Sheet sheet, MdStyleCatalog styles, RenderState st, int firstRow,
@@ -49,9 +40,9 @@ public final class BlockQuoteUtil {
             RenderState.QuoteRowInfo quoteRowInfo = st.getBlockQuoteRowInfo(r);
 
             RenderState.QuoteRowKind quoteRowKind = quoteRowInfo == null ? RenderState.QuoteRowKind.NORMAL
-                    : quoteRowInfo.kind;
+                    : quoteRowInfo.getKind();
 
-            int quoteDepth = quoteRowInfo == null ? 1 : quoteRowInfo.depth;
+            int quoteDepth = quoteRowInfo == null ? 1 : quoteRowInfo.getDepth();
 
             for (int c = startCol; c <= fillEndCol; c++) {
                 Cell cell = ExcelCellUtil.getOrCreateCell(rowObj, c);
@@ -95,7 +86,7 @@ public final class BlockQuoteUtil {
 
                     } else if (quoteRowInfo != null && quoteRowInfo.isTableContentColumn(c)) {
 
-                        cell.setCellStyle(resolveQuoteTableStyle(quoteRowInfo.tableRowStyleRole, styles));
+                        cell.setCellStyle(resolveQuoteTableStyle(quoteRowInfo.getTableRowStyleRole(), styles));
 
                     } else {
                         // テーブル範囲より右側は引用背景だけを適用する。
@@ -130,11 +121,11 @@ public final class BlockQuoteUtil {
     private static CellStyle resolveBlockQuoteContentStyle(RenderState.QuoteRowInfo quoteRowInfo, int col,
             MdStyleCatalog styles) {
 
-        if (quoteRowInfo == null || col != quoteRowInfo.contentCol) {
+        if (quoteRowInfo == null || col != quoteRowInfo.getContentCol()) {
             return styles.blockQuoteBodyStyle;
         }
 
-        switch (quoteRowInfo.kind) {
+        switch (quoteRowInfo.getKind()) {
         case HEADING_1:
             return styles.blockQuoteHeading1Style;
 

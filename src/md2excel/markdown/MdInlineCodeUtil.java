@@ -47,7 +47,7 @@ public final class MdInlineCodeUtil {
             char ch = text.charAt(index);
 
             // エスケープされた記号は構文として扱わない
-            if (ch == '\\' && index + 1 < text.length() && isAsciiPunctuation(text.charAt(index + 1))) {
+            if (ch == '\\' && index + 1 < text.length() && MdCharUtil.isAsciiPunctuation(text.charAt(index + 1))) {
 
                 out.append(ch);
                 out.append(text.charAt(index + 1));
@@ -127,14 +127,5 @@ public final class MdInlineCodeUtil {
         }
 
         return 0;
-    }
-
-    private static boolean isAsciiPunctuation(char ch) {
-        if (ch > 0x7F) {
-            return false;
-        }
-
-        return (ch >= '!' && ch <= '/') || (ch >= ':' && ch <= '@') || (ch >= '[' && ch <= '`')
-                || (ch >= '{' && ch <= '~');
     }
 }

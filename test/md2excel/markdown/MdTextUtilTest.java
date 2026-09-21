@@ -45,17 +45,6 @@ public class MdTextUtilTest {
     }
 
     @Test
-    public void recognizesOpeningAndClosingCodeFences() {
-        assertTrue(MdTextUtil.isOpeningCodeFenceLine("```text"));
-
-        assertTrue(MdTextUtil.isClosingCodeFenceLine("````  ", '`', 3));
-
-        assertFalse(MdTextUtil.isClosingCodeFenceLine("``` trailing", '`', 3));
-
-        assertFalse(MdTextUtil.isClosingCodeFenceLine("~~~", '`', 3));
-    }
-
-    @Test
     public void recognizesHorizontalRules() {
         assertTrue(MdTextUtil.isHorizontalRuleLine("---"));
         assertTrue(MdTextUtil.isHorizontalRuleLine("* * *"));

@@ -35,9 +35,7 @@ final class ParagraphBuffer {
     boolean isListNote = false;
 
     // 引用段落で使う
-    boolean inBlockQuote = false;
-    int quoteStartCol = -1; // 本文列
-    int quoteDecorCol = -1; // 左罫線列
+    int quoteStartCol = -1;
     int quoteDepth = 1;
 
     // スタイル

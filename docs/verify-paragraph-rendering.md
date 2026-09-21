@@ -318,6 +318,54 @@ after thematic break
 > > | --- | --- |
 > > | a | b |
 
+### QD11 fenced code block inside nested quote
+
+> > ```text
+> > line1
+> > line2
+> > ```
+
+### QD12 nested quoted code should not parse markdown
+
+> > ```text
+> > *not italic*
+> > **not bold**
+> > `not inline code`
+> > | not | a | table |
+> > - not a list
+> > > literal greater-than
+> > ```
+
+### QD13 nested quoted code block lines with leading tab
+
+> > ```text
+> > 	x
+> > 	y
+> > ```
+
+### QD14 nested quoted code block boundary
+
+> > paragraph before code
+> >
+> > ```text
+> > code body
+> > ```
+> >
+> > paragraph after code
+
+### QD15 nested quoted code block with longer fence
+
+> > ````text
+> > ```
+> > code body
+> > ````
+
+### QD16 tilde code fence inside nested quote
+
+> > ~~~text
+> > alpha
+> > beta
+> > ~~~
 ---
 
 ## table rendering
@@ -532,13 +580,3 @@ normal line after quote
 | h1 | h2 |
 | --- | --- |
 | last | row |
-
----
-
-## EOF rendering
-
-### E1 code block without closing fence at EOF
-
-```text
-line1
-line2

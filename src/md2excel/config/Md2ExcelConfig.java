@@ -1,69 +1,64 @@
 package md2excel.config;
 
-import org.apache.poi.ss.SpreadsheetVersion;
-import org.apache.poi.ss.usermodel.VerticalAlignment;
+import java.nio.file.Path;
 
+/**
+ * MarkdownからExcelへの変換設定。
+ */
 public final class Md2ExcelConfig {
 
-    // B列開始と左右の余白を確保するため、最低3列（A～C）とする
-    public static final int MIN_SHEET_COLUMN_COUNT = 3;
-    public static final int MAX_SHEET_COLUMN_COUNT = SpreadsheetVersion.EXCEL2007.getMaxColumns();
+    private final Path inputPath;
+    private final Path outputPath;
 
-    public static final int MIN_FONT_SIZE = 5;
-    public static final int MAX_FONT_SIZE = 72;
+    private final MdFontSettings fontSettings;
+    private final MdSheetSettings sheetSettings;
 
-    public final String inPath;
-    public final String outPath;
-    public final int sheetColumnCount;
-    public final String fontName;
-    public final int h1Size;
-    public final int h2Size;
-    public final int h3Size;
-    public final int normalSize;
-    public final VerticalAlignment vAlign;
+    public Md2ExcelConfig(Path inputPath, Path outputPath, MdFontSettings fontSettings, MdSheetSettings sheetSettings) {
 
-    public Md2ExcelConfig(String inPath, String outPath, int sheetColumnCount, String fontName, int h1Size, int h2Size,
-            int h3Size, int normalSize, VerticalAlignment vAlign) {
+        this.inputPath = requirePath(inputPath, "inputPath");
 
-        this.inPath = requireText(inPath, "inPath");
-        this.outPath = requireText(outPath, "outPath");
-        this.fontName = requireText(fontName, "fontName");
+        this.outputPath = requirePath(outputPath, "outputPath");
 
-        validateRange(sheetColumnCount, MIN_SHEET_COLUMN_COUNT, MAX_SHEET_COLUMN_COUNT, "sheetColumnCount");
+        this.fontSettings = requireValue(fontSettings, "fontSettings");
 
-        validateRange(h1Size, MIN_FONT_SIZE, MAX_FONT_SIZE, "h1Size");
-
-        validateRange(h2Size, MIN_FONT_SIZE, MAX_FONT_SIZE, "h2Size");
-
-        validateRange(h3Size, MIN_FONT_SIZE, MAX_FONT_SIZE, "h3Size");
-
-        validateRange(normalSize, MIN_FONT_SIZE, MAX_FONT_SIZE, "normalSize");
-
-        if (vAlign == null) {
-            throw new IllegalArgumentException("vAlign must not be null");
-        }
-
-        this.sheetColumnCount = sheetColumnCount;
-        this.h1Size = h1Size;
-        this.h2Size = h2Size;
-        this.h3Size = h3Size;
-        this.normalSize = normalSize;
-        this.vAlign = vAlign;
+        this.sheetSettings = requireValue(sheetSettings, "sheetSettings");
     }
 
-    private static String requireText(String value, String name) {
+    public Path getInputPath() {
+        return inputPath;
+    }
 
-        if (value == null || value.trim().isEmpty()) {
+    public Path getOutputPath() {
+        return outputPath;
+    }
+
+    public MdFontSettings getFontSettings() {
+        return fontSettings;
+    }
+
+    public MdSheetSettings getSheetSettings() {
+        return sheetSettings;
+    }
+
+    private static Path requirePath(Path value, String name) {
+
+        if (value == null) {
+            throw new IllegalArgumentException(name + " must not be null");
+        }
+
+        if (value.toString().isEmpty()) {
             throw new IllegalArgumentException(name + " must not be empty");
         }
 
-        return value.trim();
+        return value;
     }
 
-    private static void validateRange(int value, int min, int max, String name) {
+    private static <T> T requireValue(T value, String name) {
 
-        if (value < min || value > max) {
-            throw new IllegalArgumentException(name + " must be between " + min + " and " + max + ": " + value);
+        if (value == null) {
+            throw new IllegalArgumentException(name + " must not be null");
         }
+
+        return value;
     }
 }

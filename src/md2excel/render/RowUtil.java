@@ -18,7 +18,7 @@ public final class RowUtil {
     }
 
     public static Row createRow(Sheet sheet, RenderState st, CellStyle defaultRowStyle) {
-        Row row = sheet.createRow(st.rowIndex++);
+        Row row = sheet.createRow(st.allocateNextRowIndex());
         ensureRowStyle(row, defaultRowStyle);
         return row;
     }
@@ -27,13 +27,17 @@ public final class RowUtil {
             CellStyle defaultRowStyle) {
 
         Row row;
-        if (st.lastRowType == RenderState.RowType.BLANK && st.lastBlankFromMarkdown && st.rowIndex > 0
-                && canReuseBlank) {
-            row = sheet.getRow(st.rowIndex - 1);
-            if (row == null)
-                row = sheet.createRow(st.rowIndex - 1);
+        if (st.hasPreviousReusableMarkdownBlankRow() && canReuseBlank) {
+
+            int previousRowIndex = st.getPreviousRowIndex();
+
+            row = sheet.getRow(previousRowIndex);
+
+            if (row == null) {
+                row = sheet.createRow(previousRowIndex);
+            }
         } else {
-            row = sheet.createRow(st.rowIndex++);
+            row = sheet.createRow(st.allocateNextRowIndex());
         }
         ensureRowStyle(row, defaultRowStyle);
         return row;
@@ -48,8 +52,10 @@ public final class RowUtil {
 
     // 判定ルールをここに集約（仕様維持）
     private static boolean canReuseMarkdownBlank(RenderState st, ReuseKind kind) {
-        if (kind != ReuseKind.HORIZONTAL_RULE && st.lastBlankAfterTable)
+        if (kind != ReuseKind.HORIZONTAL_RULE && st.isLastBlankAfterTable()) {
+
             return false;
+        }
         switch (kind) {
         case HORIZONTAL_RULE:
             return true;
@@ -75,19 +81,26 @@ public final class RowUtil {
     }
 
     public static Row reuseLastMarkdownBlankRow(Sheet sheet, RenderState st, CellStyle defaultRowStyle) {
+
         Row row;
-        if (st.lastBlankRowIndex < 0) {
-            row = sheet.createRow(st.rowIndex++);
+
+        int blankRowIndex = st.getLastBlankRowIndex();
+
+        if (blankRowIndex < 0) {
+            row = sheet.createRow(st.allocateNextRowIndex());
         } else {
-            row = sheet.getRow(st.lastBlankRowIndex);
-            if (row == null)
-                row = sheet.createRow(st.lastBlankRowIndex);
+            row = sheet.getRow(blankRowIndex);
+
+            if (row == null) {
+                row = sheet.createRow(blankRowIndex);
+            }
         }
+
         ensureRowStyle(row, defaultRowStyle);
         return row;
     }
 
-    // 任意 rowNum を get or create（st.rowIndex は触らない）
+    // 任意 rowNum を get or create
     public static Row getOrCreateRow(Sheet sheet, int rowNum, CellStyle defaultRowStyle) {
         Row row = sheet.getRow(rowNum);
         if (row == null) {

@@ -1,30 +1,41 @@
 package md2excel.render;
 
 import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import md2excel.excel.MdStyleCatalog;
 
 public final class RenderContext {
-    final Workbook wb;
+
     final Sheet sheet;
     final MdStyleCatalog styles;
     final RenderState st;
     final MarkdownFontCache fontCache;
 
-    public RenderContext(Workbook wb, Sheet sheet, MdStyleCatalog styles, int sheetColumnCount) {
+    public RenderContext(XSSFWorkbook workbook, Sheet sheet, MdStyleCatalog styles, SheetColumnLayout columnLayout,
+            int startRowIndex) {
 
-        this(wb, sheet, styles, sheetColumnCount, 0, 0);
-    }
+        if (workbook == null) {
+            throw new IllegalArgumentException("workbook must not be null");
+        }
 
-    public RenderContext(Workbook wb, Sheet sheet, MdStyleCatalog styles, int sheetColumnCount, int startRowIndex,
-            int startColIndex) {
+        if (sheet == null) {
+            throw new IllegalArgumentException("sheet must not be null");
+        }
 
-        this.wb = wb;
+        if (styles == null) {
+            throw new IllegalArgumentException("styles must not be null");
+        }
+
+        if (columnLayout == null) {
+            throw new IllegalArgumentException("columnLayout must not be null");
+        }
+
         this.sheet = sheet;
         this.styles = styles;
-        this.st = new RenderState(sheetColumnCount, startRowIndex, startColIndex);
 
-        this.fontCache = new MarkdownFontCache(wb);
+        this.st = new RenderState(columnLayout, startRowIndex);
+
+        this.fontCache = new MarkdownFontCache(workbook);
     }
 }

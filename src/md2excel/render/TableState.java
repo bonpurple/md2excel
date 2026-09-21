@@ -17,10 +17,6 @@ final class TableState {
         return startCol;
     }
 
-    int getHeaderRow() {
-        return headerRow;
-    }
-
     int getBodyStartRow() {
         return bodyStartRow;
     }
