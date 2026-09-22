@@ -3,6 +3,7 @@ package md2excel;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 
+import md2excel.app.BlockBoundaryRenderingTest;
 import md2excel.app.MarkdownFileSourceTest;
 import md2excel.app.MarkdownToExcelConverterTest;
 import md2excel.app.MarkdownToExcelTest;
@@ -34,6 +35,6 @@ import md2excel.render.SheetColumnLayoutTest;
         CodeBlockFrameMaskTest.class, MdStyleCatalogTest.class, MarkdownInlineTest.class, MarkdownFontCacheTest.class,
         SheetColumnLayoutTest.class, MarkdownTableTest.class, MarkdownLineParserTest.class,
         MarkdownFileSourceTest.class, MarkdownWorkbookRendererTest.class, MarkdownToExcelTest.class,
-        MarkdownToExcelConverterTest.class, ParagraphRenderingTest.class })
+        MarkdownToExcelConverterTest.class, ParagraphRenderingTest.class, BlockBoundaryRenderingTest.class })
 public class AllTests {
 }
