@@ -164,38 +164,31 @@ final class ParagraphUtil {
     }
 
     private static ParagraphBuffer startBullet(LineInfo li, RenderContext ctx) {
-        ctx.st.ensureAutoBlankBeforeChildListIfNeeded(ctx.sheet, ctx.styles.blankRowStyle, li.getIndent());
-
-        int depth = ctx.st.updateListDepth(li.getIndent(), false);
-
-        int col = clampCol(ctx.st.getStartColIndex() + 1 + depth, ctx.st);
-
-        ParagraphBuffer p = new ParagraphBuffer(ParagraphBuffer.Kind.BULLET);
-        p.baseIndent = li.getIndent();
-        p.firstCol = col;
-        p.continuationCol = clampCol(col + 1, ctx.st);
-        p.firstLineStyle = ctx.styles.bulletStyle;
-        p.continuationStyle = ctx.styles.bulletStyle;
-        p.firstLinePrefix = (li.getListMarkerText() == null) ? "・ " : li.getListMarkerText();
-
-        p.appendLine(li.getListContentText(), li.endsWithHardBreak());
-        return p;
+        return startNormalList(li, ctx, false);
     }
 
     private static ParagraphBuffer startNumber(LineInfo li, RenderContext ctx) {
+        return startNormalList(li, ctx, true);
+    }
+
+    private static ParagraphBuffer startNormalList(LineInfo li, RenderContext ctx, boolean ordered) {
         ctx.st.ensureAutoBlankBeforeChildListIfNeeded(ctx.sheet, ctx.styles.blankRowStyle, li.getIndent());
 
-        int depth = ctx.st.updateListDepth(li.getIndent(), true);
+        int depth = ctx.st.updateListDepth(li.getIndent(), ordered);
 
         int col = clampCol(ctx.st.getStartColIndex() + 1 + depth, ctx.st);
 
-        ParagraphBuffer p = new ParagraphBuffer(ParagraphBuffer.Kind.NUMBER);
+        ParagraphBuffer.Kind kind = ordered ? ParagraphBuffer.Kind.NUMBER : ParagraphBuffer.Kind.BULLET;
+        CellStyle style = ordered ? ctx.styles.listStyle : ctx.styles.bulletStyle;
+        String defaultMarker = ordered ? "" : "・ ";
+
+        ParagraphBuffer p = new ParagraphBuffer(kind);
         p.baseIndent = li.getIndent();
         p.firstCol = col;
         p.continuationCol = clampCol(col + 1, ctx.st);
-        p.firstLineStyle = ctx.styles.listStyle;
-        p.continuationStyle = ctx.styles.listStyle;
-        p.firstLinePrefix = (li.getListMarkerText() == null) ? "" : li.getListMarkerText();
+        p.firstLineStyle = style;
+        p.continuationStyle = style;
+        p.firstLinePrefix = (li.getListMarkerText() == null) ? defaultMarker : li.getListMarkerText();
 
         p.appendLine(li.getListContentText(), li.endsWithHardBreak());
         return p;
