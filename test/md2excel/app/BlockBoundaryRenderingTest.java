@@ -114,6 +114,20 @@ public class BlockBoundaryRenderingTest {
     }
 
     @Test
+    public void mixedNestedListKeepsIndentedParagraphAndBlankBeforeShallowReturn() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, "- root", "  1. child", "", "    detail", "- sibling");
+
+            assertOutput(sheet, 6, "C2=・ root", "D3=1. child", "E4=detail", "C6=・ sibling");
+            assertPlainCell(workbook, cell(sheet, "C2"));
+            assertPlainCell(workbook, cell(sheet, "D3"));
+            assertPlainCell(workbook, cell(sheet, "E4"));
+            assertEmptyRow(sheet, 5);
+            assertPlainCell(workbook, cell(sheet, "C6"));
+        }
+    }
+
+    @Test
     public void consecutiveBlanksBetweenParagraphsProduceOneBlankRow() throws Exception {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             Sheet sheet = render(workbook, "first", "", "", "", "second");

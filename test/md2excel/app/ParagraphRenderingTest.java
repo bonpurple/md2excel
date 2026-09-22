@@ -1,6 +1,7 @@
 package md2excel.app;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -8,7 +9,9 @@ import java.util.List;
 
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -105,6 +108,50 @@ public class ParagraphRenderingTest {
 
             assertTextCells(sheet, "C2=1. first second");
             assertEquals(1, sheet.getLastRowNum());
+        }
+    }
+
+    @Test
+    public void bulletHardBreakMovesContentToContinuationColumnWithoutMarker() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, "- first  ", "  second");
+
+            assertTextCells(sheet, "C2=・ first", "D3=second");
+            assertEquals(2, sheet.getLastRowNum());
+            assertListLineStyles(workbook, sheet.getRow(1).getCell(2), sheet.getRow(2).getCell(3));
+        }
+    }
+
+    @Test
+    public void numberedHardBreakPreservesParenthesizedMarkerOnlyOnFirstLine() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, "12) first  ", "    second");
+
+            assertTextCells(sheet, "C2=12) first", "D3=second");
+            assertEquals(2, sheet.getLastRowNum());
+            assertListLineStyles(workbook, sheet.getRow(1).getCell(2), sheet.getRow(2).getCell(3));
+        }
+    }
+
+    @Test
+    public void bulletHardBreakUsesOnlyRenderableColumnAtMinimumColumnCount() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, MdSheetSettings.MIN_TOTAL_COLUMN_COUNT, "- first  ", "  second");
+
+            assertTextCells(sheet, "B2=・ first", "B3=second");
+            assertEquals(2, sheet.getLastRowNum());
+            assertListLineStyles(workbook, sheet.getRow(1).getCell(1), sheet.getRow(2).getCell(1));
+        }
+    }
+
+    @Test
+    public void numberedHardBreakUsesOnlyRenderableColumnAtMinimumColumnCount() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, MdSheetSettings.MIN_TOTAL_COLUMN_COUNT, "12) first  ", "    second");
+
+            assertTextCells(sheet, "B2=12) first", "B3=second");
+            assertEquals(2, sheet.getLastRowNum());
+            assertListLineStyles(workbook, sheet.getRow(1).getCell(1), sheet.getRow(2).getCell(1));
         }
     }
 
@@ -236,8 +283,13 @@ public class ParagraphRenderingTest {
     }
 
     private static Sheet render(XSSFWorkbook workbook, String... lines) {
+        return render(workbook, 40, lines);
+    }
+
+    private static Sheet render(XSSFWorkbook workbook, int totalColumnCount, String... lines) {
         new MarkdownWorkbookRenderer().render(Arrays.asList(lines).iterator(), workbook,
-                new MdFontSettings("Meiryo", 16, 14, 12, 11), new MdSheetSettings(40, VerticalAlignment.BOTTOM));
+                new MdFontSettings("Meiryo", 16, 14, 12, 11),
+                new MdSheetSettings(totalColumnCount, VerticalAlignment.BOTTOM));
         return workbook.getSheet("spec");
     }
 
@@ -260,6 +312,25 @@ public class ParagraphRenderingTest {
 
         assertEquals(size, font.getFontHeightInPoints());
         assertEquals(bold, font.getBold());
+    }
+
+    private static void assertListLineStyles(XSSFWorkbook workbook, Cell first, Cell continuation) {
+        assertPlainCell(workbook, first);
+        assertPlainCell(workbook, continuation);
+        assertEquals(first.getCellStyle().getIndex(), continuation.getCellStyle().getIndex());
+    }
+
+    private static void assertPlainCell(XSSFWorkbook workbook, Cell cell) {
+        CellStyle style = cell.getCellStyle();
+
+        assertEquals(BorderStyle.NONE, style.getBorderLeft());
+        assertEquals(BorderStyle.NONE, style.getBorderTop());
+        assertEquals(BorderStyle.NONE, style.getBorderRight());
+        assertEquals(BorderStyle.NONE, style.getBorderBottom());
+        assertEquals(FillPatternType.NO_FILL, style.getFillPattern());
+        assertEquals(VerticalAlignment.BOTTOM, style.getVerticalAlignment());
+        assertFalse(style.getWrapText());
+        assertCellFont(workbook, cell, 11, false);
     }
 
     private static void assertRichTextFont(XSSFWorkbook workbook, Cell cell, boolean bold, boolean italic) {
