@@ -67,6 +67,10 @@ public final class MarkdownRenderer {
             renderBlockLine(line, ctx);
         }
 
+        /*
+         * EOFでは、保留段落、未閉鎖コード枠、表、引用装飾をこの順序で確定する。
+         * 引用装飾は引用段落の出力と表の最終行役割の確定後に行い、後続行用の自動空行挿入や通常のブロック境界状態リセットは行わない。
+         */
         if (paragraph != null) {
             ParagraphUtil.flush(paragraph, ctx);
         }
