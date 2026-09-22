@@ -215,13 +215,13 @@ final class RenderState {
     }
 
     void afterWriteQuotedHorizontalRule() {
-        apply(Tx.WRITE_HORIZONTAL_RULE, -1, -1, 0, false);
+        apply(Tx.WRITE_HORIZONTAL_RULE, -1, 0, false);
 
         blockQuoteState.markLastWasBlockQuote();
     }
 
     void afterWriteQuotedCodeLine(int col) {
-        apply(Tx.WRITE_CODE_LINE, -1, col, 0, false);
+        apply(Tx.WRITE_CODE_LINE, -1, 0, false);
 
         blockQuoteState.markLastWasBlockQuote();
     }
@@ -232,13 +232,13 @@ final class RenderState {
     }
 
     void afterSkipQuotedTableSeparatorLine() {
-        apply(Tx.SKIP_TABLE_SEPARATOR, -1, -1, 0, false);
+        apply(Tx.SKIP_TABLE_SEPARATOR, -1, 0, false);
 
         blockQuoteState.markLastWasBlockQuote();
     }
 
     void afterWriteTableRow(int startCol) {
-        apply(Tx.WRITE_TABLE_ROW, -1, startCol, 0, false);
+        apply(Tx.WRITE_TABLE_ROW, -1, 0, false);
     }
 
     void afterOpenNormalCodeFence() {
@@ -334,7 +334,7 @@ final class RenderState {
     }
 
     // ここが唯一の「状態遷移ルール本体」
-    private void apply(Tx tx, int rowNum, int col, int indent, boolean isListNote) {
+    private void apply(Tx tx, int rowNum, int indent, boolean isListNote) {
         switch (tx) {
         case WRITE_MARKDOWN_BLANK:
             lastRowType = RowType.BLANK;
@@ -473,19 +473,19 @@ final class RenderState {
     }
 
     void afterWriteMarkdownBlank(int blankRowNum) {
-        apply(Tx.WRITE_MARKDOWN_BLANK, blankRowNum, -1, 0, false);
+        apply(Tx.WRITE_MARKDOWN_BLANK, blankRowNum, 0, false);
     }
 
     void afterWriteHorizontalRule() {
-        apply(Tx.WRITE_HORIZONTAL_RULE, -1, -1, 0, false);
+        apply(Tx.WRITE_HORIZONTAL_RULE, -1, 0, false);
     }
 
     void afterWriteHeading() {
-        apply(Tx.WRITE_HEADING, -1, -1, 0, false);
+        apply(Tx.WRITE_HEADING, -1, 0, false);
     }
 
     void afterWriteCodeLine(int col) {
-        apply(Tx.WRITE_CODE_LINE, -1, col, 0, false);
+        apply(Tx.WRITE_CODE_LINE, -1, 0, false);
     }
 
     void recordBlockQuoteRow(int rowNum, int quoteStartCol, int contentCol, QuoteRowKind kind, int depth) {
@@ -527,25 +527,25 @@ final class RenderState {
     }
 
     void afterWriteBulletItem(int rowNum, int col) {
-        apply(Tx.WRITE_BULLET_ITEM, rowNum, col, 0, false);
+        apply(Tx.WRITE_BULLET_ITEM, rowNum, 0, false);
     }
 
     void afterWriteNumberedItem(int indent, int col) {
-        apply(Tx.WRITE_NUMBERED_ITEM, -1, col, indent, false);
+        apply(Tx.WRITE_NUMBERED_ITEM, -1, indent, false);
     }
 
     void afterWriteNormalText(int rowNum, int col, int indent, boolean isListNote) {
-        apply(Tx.WRITE_NORMAL_TEXT, rowNum, col, indent, isListNote);
+        apply(Tx.WRITE_NORMAL_TEXT, rowNum, indent, isListNote);
     }
 
     // 自動挿入の空行（Markdown 由来ではない）を書いた後
     void afterWriteAutoBlank(int rowNum) {
-        apply(Tx.WRITE_AUTO_BLANK, rowNum, -1, 0, false);
+        apply(Tx.WRITE_AUTO_BLANK, rowNum, 0, false);
     }
 
     // 連続空行など「行は増やさない」が Markdown 空行扱いになるケース
     void afterConsumeMarkdownBlankWithoutNewRow() {
-        apply(Tx.CONSUME_MARKDOWN_BLANK_NO_ROW, -1, -1, 0, false);
+        apply(Tx.CONSUME_MARKDOWN_BLANK_NO_ROW, -1, 0, false);
     }
 
     // 引用内の空行を、Excel行を追加せずに消費した場合
@@ -556,7 +556,7 @@ final class RenderState {
 
     // テーブルの区切り行（|---|---|）は「行を書かないが table 中扱い」にする
     void afterSkipTableSeparatorLine() {
-        apply(Tx.SKIP_TABLE_SEPARATOR, -1, -1, 0, false);
+        apply(Tx.SKIP_TABLE_SEPARATOR, -1, 0, false);
     }
 
     /** Markdown空行（入力の空行）を処理する：必要なら行を作り、必要なら作らない。 */
@@ -637,7 +637,7 @@ final class RenderState {
     }
 
     void afterWriteQuotedHeading() {
-        apply(Tx.WRITE_HEADING, -1, -1, 0, false);
+        apply(Tx.WRITE_HEADING, -1, 0, false);
 
         // 通常見出し用の状態を引用外へ漏らさない。
         inHeadingParagraphBlock = false;
