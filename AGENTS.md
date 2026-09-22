@@ -52,13 +52,13 @@ Do not perform broad redesigns of these classes as part of an unrelated task.
 
 ## Formatting
 
-- Use the existing Eclipse Java Formatter configuration.
-- Format only Java files changed by the current task.
-- Java source files must remain UTF-8 without BOM.
-- Java source files must use LF line endings, as required by `.gitattributes`.
-- The Eclipse CLI formatter may produce CRLF on Windows; normalize changed Java files back to LF after formatting.
+- Follow the existing Eclipse Java formatting style.
+- Do not use the Eclipse Oxygen CLI formatter directly on repository files because it may corrupt UTF-8 Japanese text in this environment.
+- Prefer minimal formatting changes consistent with surrounding code.
+- If formatting is necessary, use the Eclipse IDE manually or verify formatter output on a copy before applying it.
+- Java source files must remain UTF-8 without BOM and use LF line endings.
 - Do not format unrelated files.
-- Run `git diff --check` after formatting.
+- Run `git diff --check` after changes.
 
 ## Git
 
