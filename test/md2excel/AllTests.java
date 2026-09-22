@@ -10,6 +10,7 @@ import md2excel.app.MarkdownToExcelTest;
 import md2excel.app.MarkdownWorkbookRendererTest;
 import md2excel.app.ParagraphRenderingTest;
 import md2excel.app.TableRenderingTest;
+import md2excel.app.SavedFormattingTest;
 import md2excel.config.Md2ExcelConfigDialogTest;
 import md2excel.config.Md2ExcelConfigTest;
 import md2excel.config.MdFontSettingsTest;
@@ -37,6 +38,6 @@ import md2excel.render.SheetColumnLayoutTest;
         SheetColumnLayoutTest.class, MarkdownTableTest.class, MarkdownLineParserTest.class,
         MarkdownFileSourceTest.class, MarkdownWorkbookRendererTest.class, MarkdownToExcelTest.class,
         MarkdownToExcelConverterTest.class, ParagraphRenderingTest.class, BlockBoundaryRenderingTest.class,
-        TableRenderingTest.class })
+        TableRenderingTest.class, SavedFormattingTest.class })
 public class AllTests {
 }
