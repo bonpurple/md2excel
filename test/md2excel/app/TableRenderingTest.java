@@ -178,6 +178,66 @@ public class TableRenderingTest {
         }
     }
 
+    // R1前の実装を実行して観察した値。pipe解除後のinline解析結果も含む。
+    @Test
+    public void backslashParityDeterminesBodyCellBoundariesAndDisplayedText() throws Exception {
+        String[] bodies = { "|a\\|b|tail|", "|a\\\\|b|tail|", "|a\\\\\\|b|tail|", "|a\\\\\\\\|b|tail|" };
+        String[][] values = { { "a|b", "tail", "" }, { "a\\", "b", "tail" }, { "a\\|b", "tail", "" },
+                { "a\\\\", "b", "tail" } };
+        for (int i = 0; i < bodies.length; i++) {
+            assertParsedBody(bodies[i], values[i]);
+        }
+    }
+
+    @Test
+    public void unescapedPipeSplitsInlineCodeAndLeavesUnmatchedBackticks() throws Exception {
+        assertParsedBody("|`a|b`|tail|", "`a", "b`", "tail");
+    }
+
+    @Test
+    public void leftOuterPipeAloneIsRemoved() throws Exception {
+        assertParsedBody("|a|b", "a", "b", "");
+    }
+
+    @Test
+    public void rightOuterPipeAloneIsRemoved() throws Exception {
+        assertParsedBody("a|b|", "a", "b", "");
+    }
+
+    @Test
+    public void consecutivePipesCreateMiddleBlankCell() throws Exception {
+        assertParsedBody("|a||c|", "a", "", "c");
+    }
+
+    @Test
+    public void escapedPipeAtLineEndIsRemovedButBackslashRemains() throws Exception {
+        assertParsedBody("|a|b\\|", "a", "b\\", "");
+    }
+
+    @Test
+    public void emptyFirstCellKeepsFollowingTextInSecondColumn() throws Exception {
+        assertParsedBody("||b|", "", "b", "");
+    }
+
+    @Test
+    public void emptyLastCellIsRenderedAsBlank() throws Exception {
+        assertParsedBody("|a||", "a", "", "");
+    }
+
+    private static void assertParsedBody(String body, String... values) throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, 40, "|h1|h2|h3|", "|-|-|-|", body);
+            assertTableSize(sheet, 3, 3);
+            for (int i = 0; i < values.length; i++) {
+                Cell cell = sheet.getRow(2).getCell(i + 1);
+                assertNotNull(body + ", column " + (i + 1), cell);
+                String label = body + ", " + cell.getAddress();
+                assertEquals(label, values[i], cell.getStringCellValue());
+                assertEquals(label, values[i].isEmpty() ? CellType.BLANK : CellType.STRING, cell.getCellType());
+            }
+        }
+    }
+
     private static Sheet render(XSSFWorkbook workbook, int columns, String... lines) {
         new MarkdownWorkbookRenderer().render(Arrays.asList(lines).iterator(), workbook,
                 new MdFontSettings("Meiryo", 16, 14, 12, 11), new MdSheetSettings(columns, VerticalAlignment.BOTTOM));
