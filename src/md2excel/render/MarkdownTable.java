@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 
@@ -118,6 +119,7 @@ public final class MarkdownTable {
             }
 
             rowStyleRoles.add(rowStyleRole);
+            CellStyle rowStyle = getTableCellStyle(ctx.styles, rowStyleRole);
 
             if (firstRowNum < 0) {
                 firstRowNum = row.getRowNum();
@@ -132,21 +134,10 @@ public final class MarkdownTable {
                 List<MarkdownInline.MdSegment> segments = (rowOffset < lines.size()) ? lines.get(rowOffset)
                         : Collections.<MarkdownInline.MdSegment>emptyList();
 
-                if (isHeaderRow) {
-                    if (!segments.isEmpty()) {
-                        MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, segments,
-                                ctx.styles.tableHeaderStyle);
-                    } else {
-                        cell.setCellStyle(ctx.styles.tableHeaderStyle);
-                    }
+                if (!segments.isEmpty()) {
+                    MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, segments, rowStyle);
                 } else {
-                    if (!segments.isEmpty()) {
-                        MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, segments,
-                                hasNextExpandedRow ? ctx.styles.tableBodyLastRowStyle : ctx.styles.tableBodyStyle);
-                    } else {
-                        cell.setCellStyle(
-                                hasNextExpandedRow ? ctx.styles.tableBodyLastRowStyle : ctx.styles.tableBodyStyle);
-                    }
+                    cell.setCellStyle(rowStyle);
                 }
 
                 colIndex++;
@@ -156,6 +147,19 @@ public final class MarkdownTable {
         }
 
         return new TableRowRenderResult(firstRowNum, lastRowNum, lastCol, rowStyleRoles);
+    }
+
+    private static CellStyle getTableCellStyle(MdStyleCatalog styles, TableRowStyleRole role) {
+        switch (role) {
+        case HEADER:
+            return styles.tableHeaderStyle;
+        case BODY_WITHOUT_BOTTOM_BORDER:
+            return styles.tableBodyLastRowStyle;
+        case BODY_WITH_BOTTOM_BORDER:
+            return styles.tableBodyStyle;
+        default:
+            throw new IllegalArgumentException("Unknown table row style role: " + role);
+        }
     }
 
     public static void closeTableIfOpen(Sheet sheet, MdStyleCatalog styles, RenderState st) {
