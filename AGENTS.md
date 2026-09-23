@@ -57,12 +57,9 @@ Do not perform broad redesigns of these classes as part of an unrelated task.
 
 ## Formatting
 
-- Follow the existing Eclipse Java formatting style.
-- Do not use the Eclipse Oxygen CLI formatter directly on repository files because it may corrupt UTF-8 Japanese text in this environment.
-- Prefer minimal formatting changes consistent with surrounding code.
-- If formatting is necessary, use the Eclipse IDE manually or verify formatter output on a copy before applying it.
+- Do not run an automatic Java formatter; final formatting of changed Java files is performed manually in the Eclipse IDE.
+- Do not reformat unrelated files.
 - Java source files must remain UTF-8 without BOM and use LF line endings.
-- Do not format unrelated files.
 - Run `git diff --check` after changes.
 
 ## Git
