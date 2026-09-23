@@ -1,5 +1,6 @@
 package md2excel.render;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 
@@ -26,11 +27,16 @@ public class MarkdownFontCacheTest {
 
             MarkdownFontCache cache = new MarkdownFontCache(workbook);
 
+            int fontCount = workbook.getNumberOfFonts();
+
             MarkdownFontCache.InlineFonts first = cache.getInlineFonts(baseStyle);
+
+            assertEquals(fontCount + 7, workbook.getNumberOfFonts());
 
             MarkdownFontCache.InlineFonts second = cache.getInlineFonts(baseStyle);
 
             assertSame(first, second);
+            assertEquals(fontCount + 7, workbook.getNumberOfFonts());
 
             assertNotNull(first.baseFont);
             assertNotNull(first.boldFont);
@@ -59,11 +65,16 @@ public class MarkdownFontCacheTest {
 
             MarkdownFontCache cache = new MarkdownFontCache(workbook);
 
+            int fontCount = workbook.getNumberOfFonts();
+
             MarkdownFontCache.CodeBlockFonts first = cache.getCodeBlockFonts(codeStyle);
+
+            assertEquals(fontCount + 2, workbook.getNumberOfFonts());
 
             MarkdownFontCache.CodeBlockFonts second = cache.getCodeBlockFonts(codeStyle);
 
             assertSame(first, second);
+            assertEquals(fontCount + 2, workbook.getNumberOfFonts());
 
             assertNotNull(first.ascii);
             assertNotNull(first.cjk);

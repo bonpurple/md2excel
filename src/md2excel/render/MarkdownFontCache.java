@@ -41,6 +41,15 @@ public final class MarkdownFontCache {
             return cached;
         }
 
+        InlineFonts fonts = createInlineFonts(baseStyle);
+
+        inlineFontsByBaseFontIndex.put(Short.valueOf(key), fonts);
+
+        return fonts;
+    }
+
+    private InlineFonts createInlineFonts(CellStyle baseStyle) {
+
         XSSFFont baseFont = workbook.getFontAt(baseStyle.getFontIndex());
 
         boolean baseBold = baseFont.getBold();
@@ -65,12 +74,8 @@ public final class MarkdownFontCache {
         XSSFFont codeCjkBold = createColoredFont(MdStyleDefaults.CODE_CJK_FONT_NAME, baseFont.getFontHeightInPoints(),
                 true, inlineCodeColor);
 
-        InlineFonts fonts = new InlineFonts(baseFont, boldFont, italicFont, boldItalicFont, codeAscii, codeCjk,
+        return new InlineFonts(baseFont, boldFont, italicFont, boldItalicFont, codeAscii, codeCjk,
                 codeAsciiBold, codeCjkBold, baseBold);
-
-        inlineFontsByBaseFontIndex.put(Short.valueOf(key), fonts);
-
-        return fonts;
     }
 
     CodeBlockFonts getCodeBlockFonts(CellStyle codeBlockStyle) {
@@ -87,6 +92,15 @@ public final class MarkdownFontCache {
             return cached;
         }
 
+        CodeBlockFonts fonts = createCodeBlockFonts(codeBlockStyle);
+
+        codeBlockFontsByStyleFontIndex.put(Short.valueOf(key), fonts);
+
+        return fonts;
+    }
+
+    private CodeBlockFonts createCodeBlockFonts(CellStyle codeBlockStyle) {
+
         XSSFFont baseFont = workbook.getFontAt(codeBlockStyle.getFontIndex());
 
         XSSFFont asciiFont = createFont(MdStyleDefaults.CODE_ASCII_FONT_NAME, baseFont.getFontHeightInPoints(), false,
@@ -95,11 +109,7 @@ public final class MarkdownFontCache {
         XSSFFont cjkFont = createFont(MdStyleDefaults.CODE_CJK_FONT_NAME, baseFont.getFontHeightInPoints(), false,
                 false);
 
-        CodeBlockFonts fonts = new CodeBlockFonts(asciiFont, cjkFont);
-
-        codeBlockFontsByStyleFontIndex.put(Short.valueOf(key), fonts);
-
-        return fonts;
+        return new CodeBlockFonts(asciiFont, cjkFont);
     }
 
     private XSSFFont createFont(String fontName, short fontHeight, boolean bold, boolean italic) {
