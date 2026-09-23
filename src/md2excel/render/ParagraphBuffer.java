@@ -18,10 +18,10 @@ final class ParagraphBuffer {
     }
 
     final Kind kind;
-    final StringBuilder inlineText = new StringBuilder(128);
+    private final StringBuilder inlineText = new StringBuilder(128);
 
-    boolean hasAnyLine = false;
-    boolean prevLineHardBreak = false;
+    private boolean hasAnyLine = false;
+    private boolean prevLineHardBreak = false;
 
     // 出力先
     int firstCol = -1;

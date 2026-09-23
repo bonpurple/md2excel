@@ -39,7 +39,7 @@ public final class MarkdownTable {
         final int firstRowNum;
         final int lastRowNum;
         final int lastCol;
-        final List<TableRowStyleRole> rowStyleRoles;
+        private final List<TableRowStyleRole> rowStyleRoles;
 
         TableRowRenderResult(int firstRowNum, int lastRowNum, int lastCol, List<TableRowStyleRole> rowStyleRoles) {
 
