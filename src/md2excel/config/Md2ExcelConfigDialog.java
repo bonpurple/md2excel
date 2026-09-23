@@ -105,31 +105,7 @@ public final class Md2ExcelConfigDialog {
      * 入力パスと同じディレクトリに、 拡張子だけを変更した出力パスを作る。
      */
     static Path replaceExtension(Path path, String newExtension) {
-
-        if (path == null) {
-            throw new IllegalArgumentException("path must not be null");
-        }
-
-        if (newExtension == null || newExtension.trim().isEmpty()) {
-
-            throw new IllegalArgumentException("newExtension must not be empty");
-        }
-
-        Path fileNamePath = path.getFileName();
-
-        if (fileNamePath == null) {
-            throw new IllegalArgumentException("path must have a file name: " + path);
-        }
-
-        String fileName = fileNamePath.toString();
-
-        int dot = fileName.lastIndexOf('.');
-
-        String outputFileName = dot > 0 ? fileName.substring(0, dot) + newExtension : fileName + newExtension;
-
-        Path parent = path.getParent();
-
-        return parent == null ? Paths.get(outputFileName) : parent.resolve(outputFileName);
+        return Md2ExcelConfigInput.replaceExtension(path, newExtension);
     }
 
     private static final class ConfigForm {
@@ -397,40 +373,13 @@ public final class Md2ExcelConfigDialog {
             try {
                 commitSpinnerEditors();
 
-                String inputText = inputPathField.getText().trim();
-
-                if (inputText.isEmpty()) {
-                    showError("Markdownファイルを選択してください。");
-                    return;
-                }
-
-                Path inputPath = Paths.get(inputText).toAbsolutePath();
-
-                Path outputPath = replaceExtension(inputPath, ".xlsx");
-
                 Object selectedFont = fontComboBox.getSelectedItem();
-
-                if (selectedFont == null || selectedFont.toString().trim().isEmpty()) {
-
-                    showError("フォントを選択してください。");
-                    return;
-                }
-
                 VerticalAlignmentOption alignmentOption = (VerticalAlignmentOption) alignmentComboBox.getSelectedItem();
-
-                if (alignmentOption == null) {
-                    showError("セルの縦位置を選択してください。");
-                    return;
-                }
-
-                MdFontSettings fontSettings = new MdFontSettings(selectedFont.toString(),
-                        getSpinnerValue(h1SizeSpinner), getSpinnerValue(h2SizeSpinner), getSpinnerValue(h3SizeSpinner),
-                        getSpinnerValue(normalSizeSpinner));
-
-                MdSheetSettings sheetSettings = new MdSheetSettings(getSpinnerValue(totalColumnCountSpinner),
-                        alignmentOption.getAlignment());
-
-                result = new Md2ExcelConfig(inputPath, outputPath, fontSettings, sheetSettings);
+                result = Md2ExcelConfigInput.create(inputPathField.getText(),
+                        selectedFont == null ? null : selectedFont.toString(),
+                        alignmentOption == null ? null : alignmentOption.getAlignment(), getSpinnerValue(h1SizeSpinner),
+                        getSpinnerValue(h2SizeSpinner), getSpinnerValue(h3SizeSpinner), getSpinnerValue(normalSizeSpinner),
+                        getSpinnerValue(totalColumnCountSpinner));
 
                 dialog.dispose();
 

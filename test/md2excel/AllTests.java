@@ -12,6 +12,7 @@ import md2excel.app.ParagraphRenderingTest;
 import md2excel.app.TableRenderingTest;
 import md2excel.app.SavedFormattingTest;
 import md2excel.config.Md2ExcelConfigDialogTest;
+import md2excel.config.Md2ExcelConfigInputTest;
 import md2excel.config.Md2ExcelConfigTest;
 import md2excel.config.MdFontSettingsTest;
 import md2excel.config.MdSheetSettingsTest;
@@ -34,6 +35,7 @@ import md2excel.render.SheetColumnLayoutTest;
 @Suite.SuiteClasses({ MdCharUtilTest.class, CodeFenceTest.class, NumberedListMarkerTest.class, MdTextUtilTest.class,
         MdInlineCodeUtilTest.class, ListStackUtilTest.class, ListRenderStateTest.class, MdFontSettingsTest.class,
         MdSheetSettingsTest.class, Md2ExcelConfigTest.class, Md2ExcelConfigDialogTest.class,
+        Md2ExcelConfigInputTest.class,
         CodeBlockFrameMaskTest.class, MdStyleCatalogTest.class, MarkdownInlineTest.class, MarkdownFontCacheTest.class,
         SheetColumnLayoutTest.class, MarkdownTableTest.class, MarkdownLineParserTest.class,
         MarkdownFileSourceTest.class, MarkdownWorkbookRendererTest.class, MarkdownToExcelTest.class,
