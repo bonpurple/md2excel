@@ -626,26 +626,8 @@ public final class MarkdownInline {
 
             if (seg.inCode) {
                 boolean wantBoldCode = seg.inBold || fonts.baseBold;
-
-                int i = 0;
-                while (i < text.length()) {
-                    int runStart = i;
-                    boolean ascii = MdTextUtil.isAsciiLike(text.charAt(i));
-                    i++;
-                    while (i < text.length() && MdTextUtil.isAsciiLike(text.charAt(i)) == ascii) {
-                        i++;
-                    }
-
-                    int runLen = i - runStart;
-                    int start = segStart + runStart;
-                    int end = start + runLen;
-
-                    if (ascii) {
-                        rich.applyFont(start, end, wantBoldCode ? fonts.codeAsciiBold : fonts.codeAscii);
-                    } else {
-                        rich.applyFont(start, end, wantBoldCode ? fonts.codeCjkBold : fonts.codeCjk);
-                    }
-                }
+                applyCodeFonts(rich, text, segStart, wantBoldCode ? fonts.codeAsciiBold : fonts.codeAscii,
+                        wantBoldCode ? fonts.codeCjkBold : fonts.codeCjk);
             } else if (seg.inBold && seg.inItalic) {
                 rich.applyFont(segStart, segEnd, fonts.boldItalicFont);
             } else if (seg.inBold) {
@@ -660,6 +642,20 @@ public final class MarkdownInline {
         }
 
         return pos;
+    }
+
+    private static void applyCodeFonts(XSSFRichTextString rich, String text, int startPos, XSSFFont asciiFont,
+            XSSFFont cjkFont) {
+        int i = 0;
+        while (i < text.length()) {
+            int runStart = i;
+            boolean ascii = MdTextUtil.isAsciiLike(text.charAt(i));
+            i++;
+            while (i < text.length() && MdTextUtil.isAsciiLike(text.charAt(i)) == ascii) {
+                i++;
+            }
+            rich.applyFont(startPos + runStart, startPos + i, ascii ? asciiFont : cjkFont);
+        }
     }
 
     private static XSSFRichTextString cloneRichTextString(XSSFRichTextString src) {
@@ -690,24 +686,7 @@ public final class MarkdownInline {
         MarkdownFontCache.CodeBlockFonts fonts = fontCache.getCodeBlockFonts(codeBlockStyle);
 
         XSSFRichTextString rich = new XSSFRichTextString(codeText);
-
-        int i = 0;
-
-        while (i < codeText.length()) {
-            int runStart = i;
-            boolean ascii = MdTextUtil.isAsciiLike(codeText.charAt(i));
-
-            i++;
-
-            while (i < codeText.length() && MdTextUtil.isAsciiLike(codeText.charAt(i)) == ascii) {
-                i++;
-            }
-
-            int start = runStart;
-            int end = i;
-
-            rich.applyFont(start, end, ascii ? fonts.ascii : fonts.cjk);
-        }
+        applyCodeFonts(rich, codeText, 0, fonts.ascii, fonts.cjk);
 
         cell.setCellStyle(codeBlockStyle);
         cell.setCellValue(rich);
