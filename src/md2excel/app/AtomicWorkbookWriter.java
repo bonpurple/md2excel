@@ -43,17 +43,7 @@ final class AtomicWorkbookWriter {
 
             replaceOutputFile(temporaryPath, absoluteOutputPath);
 
-        } catch (IOException e) {
-            deleteTemporaryFileSuppressingFailure(temporaryPath, e);
-
-            throw e;
-
-        } catch (RuntimeException e) {
-            deleteTemporaryFileSuppressingFailure(temporaryPath, e);
-
-            throw e;
-
-        } catch (Error e) {
+        } catch (IOException | RuntimeException | Error e) {
             deleteTemporaryFileSuppressingFailure(temporaryPath, e);
 
             throw e;

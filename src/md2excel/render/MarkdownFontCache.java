@@ -74,8 +74,8 @@ public final class MarkdownFontCache {
         XSSFFont codeCjkBold = createColoredFont(MdStyleDefaults.CODE_CJK_FONT_NAME, baseFont.getFontHeightInPoints(),
                 true, inlineCodeColor);
 
-        return new InlineFonts(baseFont, boldFont, italicFont, boldItalicFont, codeAscii, codeCjk,
-                codeAsciiBold, codeCjkBold, baseBold);
+        return new InlineFonts(baseFont, boldFont, italicFont, boldItalicFont, codeAscii, codeCjk, codeAsciiBold,
+                codeCjkBold, baseBold);
     }
 
     CodeBlockFonts getCodeBlockFonts(CellStyle codeBlockStyle) {
