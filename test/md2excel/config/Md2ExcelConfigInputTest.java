@@ -13,8 +13,7 @@ public class Md2ExcelConfigInputTest {
 
     @Test
     public void createsConfigFromInputValues() {
-        Md2ExcelConfig config = create(" work/document.md ", " 游ゴシック ", VerticalAlignment.BOTTOM, 16, 14,
-                12, 11, 40);
+        Md2ExcelConfig config = create(" work/document.md ", " 游ゴシック ", VerticalAlignment.BOTTOM, 16, 14, 12, 11, 40);
 
         assertEquals(Paths.get("work", "document.md").toAbsolutePath(), config.getInputPath());
         assertEquals(Paths.get("work", "document.xlsx").toAbsolutePath(), config.getOutputPath());
@@ -24,8 +23,7 @@ public class Md2ExcelConfigInputTest {
 
     @Test
     public void rejectsEmptyInputPath() {
-        assertError("Markdownファイルを選択してください。", "  ", "游ゴシック", VerticalAlignment.BOTTOM,
-                16, 14, 12, 11, 40);
+        assertError("Markdownファイルを選択してください。", "  ", "游ゴシック", VerticalAlignment.BOTTOM, 16, 14, 12, 11, 40);
     }
 
     @Test
@@ -40,26 +38,24 @@ public class Md2ExcelConfigInputTest {
 
     @Test
     public void rejectsMissingFont() {
-        assertError("フォントを選択してください。", "document.md", "  ", VerticalAlignment.BOTTOM,
-                16, 14, 12, 11, 40);
+        assertError("フォントを選択してください。", "document.md", "  ", VerticalAlignment.BOTTOM, 16, 14, 12, 11, 40);
     }
 
     @Test
     public void rejectsMissingAlignment() {
-        assertError("セルの縦位置を選択してください。", "document.md", "游ゴシック", null,
-                16, 14, 12, 11, 40);
+        assertError("セルの縦位置を選択してください。", "document.md", "游ゴシック", null, 16, 14, 12, 11, 40);
     }
 
     @Test
     public void rejectsOutOfRangeFontSize() {
-        assertError("h1Size must be between 5 and 72: 4", "document.md", "游ゴシック",
-                VerticalAlignment.BOTTOM, 4, 14, 12, 11, 40);
+        assertError("h1Size must be between 5 and 72: 4", "document.md", "游ゴシック", VerticalAlignment.BOTTOM, 4, 14, 12,
+                11, 40);
     }
 
     @Test
     public void rejectsOutOfRangeColumnCount() {
-        assertError("totalColumnCount must be between 3 and 256: 2", "document.md", "游ゴシック",
-                VerticalAlignment.BOTTOM, 16, 14, 12, 11, 2);
+        assertError("totalColumnCount must be between 3 and 256: 2", "document.md", "游ゴシック", VerticalAlignment.BOTTOM,
+                16, 14, 12, 11, 2);
     }
 
     private static Md2ExcelConfig create(String inputText, String fontName, VerticalAlignment alignment, int h1Size,

@@ -164,8 +164,8 @@ public class SavedFormattingTest {
     @Test
     public void codeBlockSwitchesBackToAsciiFontAfterJapanese() throws Exception {
         try (XSSFWorkbook workbook = reopen("```", "A日B", "```")) {
-            assertText(workbook, "C2", font("A", "Consolas", 10, false, false),
-                    font("日", "Meiryo", 10, false, false), font("B", "Consolas", 10, false, false));
+            assertText(workbook, "C2", font("A", "Consolas", 10, false, false), font("日", "Meiryo", 10, false, false),
+                    font("B", "Consolas", 10, false, false));
         }
     }
 

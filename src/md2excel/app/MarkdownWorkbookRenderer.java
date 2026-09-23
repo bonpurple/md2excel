@@ -17,7 +17,7 @@ import md2excel.render.SheetColumnLayout;
 
 /**
  * Markdownの行をExcel Workbookへ描画する。
- *
+ * 
  * ファイル入出力は担当しない。
  */
 final class MarkdownWorkbookRenderer {

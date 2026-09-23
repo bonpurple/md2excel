@@ -378,8 +378,8 @@ public final class Md2ExcelConfigDialog {
                 result = Md2ExcelConfigInput.create(inputPathField.getText(),
                         selectedFont == null ? null : selectedFont.toString(),
                         alignmentOption == null ? null : alignmentOption.getAlignment(), getSpinnerValue(h1SizeSpinner),
-                        getSpinnerValue(h2SizeSpinner), getSpinnerValue(h3SizeSpinner), getSpinnerValue(normalSizeSpinner),
-                        getSpinnerValue(totalColumnCountSpinner));
+                        getSpinnerValue(h2SizeSpinner), getSpinnerValue(h3SizeSpinner),
+                        getSpinnerValue(normalSizeSpinner), getSpinnerValue(totalColumnCountSpinner));
 
                 dialog.dispose();
 

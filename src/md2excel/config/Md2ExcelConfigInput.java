@@ -13,8 +13,8 @@ final class Md2ExcelConfigInput {
     private Md2ExcelConfigInput() {
     }
 
-    static Md2ExcelConfig create(String inputText, String fontName, VerticalAlignment alignment, int h1Size,
-            int h2Size, int h3Size, int normalSize, int totalColumnCount) {
+    static Md2ExcelConfig create(String inputText, String fontName, VerticalAlignment alignment, int h1Size, int h2Size,
+            int h3Size, int normalSize, int totalColumnCount) {
 
         String trimmedInput = inputText.trim();
 
