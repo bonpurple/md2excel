@@ -219,6 +219,11 @@ public class MarkdownToExcelConverterTest {
             assertEquals(BorderStyle.THIN, cell(sheet, 1, 3).getCellStyle().getBorderTop());
 
             assertEquals(BorderStyle.THIN, cell(sheet, 1, 3).getCellStyle().getBorderBottom());
+
+            // 引用装飾後もコード本文セルの上下枠線を維持する。
+            assertEquals(BorderStyle.THIN, cell(sheet, 1, 4).getCellStyle().getBorderTop());
+
+            assertEquals(BorderStyle.THIN, cell(sheet, 1, 4).getCellStyle().getBorderBottom());
         }
     }
 

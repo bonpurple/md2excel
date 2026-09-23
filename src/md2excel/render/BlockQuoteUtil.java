@@ -47,74 +47,80 @@ public final class BlockQuoteUtil {
             for (int c = startCol; c <= fillEndCol; c++) {
                 Cell cell = ExcelCellUtil.getOrCreateCell(rowObj, c);
 
-                // startColは最も左側の引用装飾列。
-                // 引用深度分の列を引用罫線列として扱う。
-                boolean isQuoteDecorCol = c >= startCol && c < startCol + quoteDepth;
-
-                // ----------------------------------------
-                // code
-                // ----------------------------------------
-                if (quoteRowKind == RenderState.QuoteRowKind.CODE) {
-                    if (isQuoteDecorCol) {
-                        cell.setCellStyle(styles.blockQuoteLeftStyle);
-                    }
-
-                    // 引用装飾列以外はcodeBlockFrameStyleを維持する。
-                    continue;
-                }
-
-                // ----------------------------------------
-                // horizontal rule
-                // ----------------------------------------
-                if (quoteRowKind == RenderState.QuoteRowKind.HORIZONTAL_RULE) {
-
-                    if (isQuoteDecorCol) {
-                        cell.setCellStyle(styles.blockQuoteBlankLeftStyle);
-                    } else {
-                        cell.setCellStyle(styles.blockQuoteHorizontalRuleBodyStyle);
-                    }
-
-                    continue;
-                }
-
-                // ----------------------------------------
-                // table
-                // ----------------------------------------
-                if (quoteRowKind == RenderState.QuoteRowKind.TABLE) {
-                    if (isQuoteDecorCol) {
-                        cell.setCellStyle(styles.blockQuoteLeftStyle);
-
-                    } else if (quoteRowInfo != null && quoteRowInfo.isTableContentColumn(c)) {
-
-                        cell.setCellStyle(resolveQuoteTableStyle(quoteRowInfo.getTableRowStyleRole(), styles));
-
-                    } else {
-                        // テーブル範囲より右側は引用背景だけを適用する。
-                        cell.setCellStyle(styles.blockQuoteBodyStyle);
-                    }
-
-                    continue;
-                }
-
-                // ----------------------------------------
-                // blank
-                // ----------------------------------------
-                if (quoteRowKind == RenderState.QuoteRowKind.BLANK) {
-                    cell.setCellStyle(
-                            isQuoteDecorCol ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
-
-                    continue;
-                }
-
-                // ----------------------------------------
-                // normal / heading / list
-                // ----------------------------------------
-                if (isQuoteDecorCol) {
-                    cell.setCellStyle(styles.blockQuoteLeftStyle);
-                } else {
-                    cell.setCellStyle(resolveBlockQuoteContentStyle(quoteRowInfo, c, styles));
-                }
+                applyBlockQuoteCellStyle(cell, styles, quoteRowInfo, quoteRowKind, quoteDepth, startCol, c);
             }
+        }
+    }
+
+    private static void applyBlockQuoteCellStyle(Cell cell, MdStyleCatalog styles,
+            RenderState.QuoteRowInfo quoteRowInfo, RenderState.QuoteRowKind quoteRowKind, int quoteDepth, int startCol,
+            int col) {
+
+        // startColは最も左側の引用装飾列。
+        // 引用深度分の列を引用罫線列として扱う。
+        boolean isQuoteDecorCol = col >= startCol && col < startCol + quoteDepth;
+
+        // ----------------------------------------
+        // code
+        // ----------------------------------------
+        if (quoteRowKind == RenderState.QuoteRowKind.CODE) {
+            if (isQuoteDecorCol) {
+                cell.setCellStyle(styles.blockQuoteLeftStyle);
+            }
+
+            // 引用装飾列以外はcodeBlockFrameStyleを維持する。
+            return;
+        }
+
+        // ----------------------------------------
+        // horizontal rule
+        // ----------------------------------------
+        if (quoteRowKind == RenderState.QuoteRowKind.HORIZONTAL_RULE) {
+
+            if (isQuoteDecorCol) {
+                cell.setCellStyle(styles.blockQuoteBlankLeftStyle);
+            } else {
+                cell.setCellStyle(styles.blockQuoteHorizontalRuleBodyStyle);
+            }
+
+            return;
+        }
+
+        // ----------------------------------------
+        // table
+        // ----------------------------------------
+        if (quoteRowKind == RenderState.QuoteRowKind.TABLE) {
+            if (isQuoteDecorCol) {
+                cell.setCellStyle(styles.blockQuoteLeftStyle);
+
+            } else if (quoteRowInfo != null && quoteRowInfo.isTableContentColumn(col)) {
+
+                cell.setCellStyle(resolveQuoteTableStyle(quoteRowInfo.getTableRowStyleRole(), styles));
+
+            } else {
+                // テーブル範囲より右側は引用背景だけを適用する。
+                cell.setCellStyle(styles.blockQuoteBodyStyle);
+            }
+
+            return;
+        }
+
+        // ----------------------------------------
+        // blank
+        // ----------------------------------------
+        if (quoteRowKind == RenderState.QuoteRowKind.BLANK) {
+            cell.setCellStyle(isQuoteDecorCol ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
+
+            return;
+        }
+
+        // ----------------------------------------
+        // normal / heading / list
+        // ----------------------------------------
+        if (isQuoteDecorCol) {
+            cell.setCellStyle(styles.blockQuoteLeftStyle);
+        } else {
+            cell.setCellStyle(resolveBlockQuoteContentStyle(quoteRowInfo, col, styles));
         }
     }
 

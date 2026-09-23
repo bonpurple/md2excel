@@ -225,6 +225,9 @@ public class BlockBoundaryRenderingTest {
                     assertFont(workbook, tableCell, 11, row == 2);
                 }
                 assertEquals(BorderStyle.NONE, cell(sheet, "AM" + row).getCellStyle().getBorderBottom());
+                assertEquals(BorderStyle.NONE, cell(sheet, "AM" + row).getCellStyle().getBorderLeft());
+                assertEquals(BorderStyle.NONE, cell(sheet, "AM" + row).getCellStyle().getBorderRight());
+                assertEquals(BorderStyle.NONE, cell(sheet, "AM" + row).getCellStyle().getBorderTop());
                 assertEquals(FillPatternType.SOLID_FOREGROUND, cell(sheet, "AM" + row).getCellStyle().getFillPattern());
             }
         }
