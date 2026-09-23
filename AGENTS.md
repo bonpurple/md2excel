@@ -18,12 +18,13 @@
 ## Testing
 
 - Tests use JUnit 4.
-- After changing Java code, compile all production and test sources with Java 8.
+- During implementation, prefer the smallest relevant test scope needed for feedback.
+- Before completing an independently reviewable Java change, compile all production and test sources with Java 8 and run the complete test suite once.
 - Run the complete test suite with:
   `org.junit.runner.JUnitCore md2excel.AllTests`
+- Do not repeatedly run the full suite after intermediate edits unless needed to diagnose a failure.
 - Do not delete, disable, or weaken existing tests to make a change pass.
 - When adding a new test class, register it in `AllTests`.
-- Run the full test suite after each independently reviewable change.
 
 ## Refactoring policy
 
@@ -47,6 +48,7 @@ Changes involving the following classes require particular care because behavior
 - `ParagraphUtil`
 - `MarkdownLineParser`
 - `MarkdownInline`
+- Do not re-analyze these classes broadly unless the requested change requires it.
 
 Do not perform broad redesigns of these classes as part of an unrelated task.
 
