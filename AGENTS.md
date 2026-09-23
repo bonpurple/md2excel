@@ -25,6 +25,9 @@
 - Do not repeatedly run the full suite after intermediate edits unless needed to diagnose a failure.
 - Do not delete, disable, or weaken existing tests to make a change pass.
 - When adding a new test class, register it in `AllTests`.
+- Java 8 compiler:
+  `C:\Program Files (x86)\Java\jdk1.8.0_181\bin\javac.exe`
+- Use this compiler for verification. Do not search for other JDKs unless this path is unavailable.
 
 ## Refactoring policy
 
