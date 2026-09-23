@@ -50,13 +50,7 @@ final class CodeBlockRenderer {
 
         int codeCol = clampCol(frameStartCol + 1, ctx.st);
 
-        String codeLine = MdTextUtil.removeLeadingIndentColumns(line.getContentRaw(), openingIndent);
-
-        codeLine = MdTextUtil.expandTabs(codeLine);
-
-        Cell cell = row.createCell(codeCol);
-
-        MarkdownInline.setCodeBlockRichTextCell(ctx.fontCache, cell, codeLine, ctx.styles.codeBlockStyle);
+        writeCodeLine(line, row, codeCol, openingIndent, ctx);
 
         codeBlock.recordLine(row.getRowNum(), frameStartCol);
 
@@ -100,21 +94,24 @@ final class CodeBlockRenderer {
 
         int codeCol = clampCol(frameStartCol + 1, ctx.st);
 
-        int trimColumns = codeBlock.getOpeningIndent();
-
-        String codeLine = MdTextUtil.removeLeadingIndentColumns(line.getContentRaw(), trimColumns);
-
-        codeLine = MdTextUtil.expandTabs(codeLine);
-
-        Cell cell = row.createCell(codeCol);
-
-        MarkdownInline.setCodeBlockRichTextCell(ctx.fontCache, cell, codeLine, ctx.styles.codeBlockStyle);
+        writeCodeLine(line, row, codeCol, codeBlock.getOpeningIndent(), ctx);
 
         codeBlock.recordLine(row.getRowNum(), frameStartCol);
 
         ctx.st.afterWriteQuotedCodeLine(codeCol);
 
         ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, RenderState.QuoteRowKind.CODE, quoteDepth);
+    }
+
+    private static void writeCodeLine(LineInfo line, Row row, int codeCol, int openingIndent, RenderContext ctx) {
+
+        String codeLine = MdTextUtil.removeLeadingIndentColumns(line.getContentRaw(), openingIndent);
+
+        codeLine = MdTextUtil.expandTabs(codeLine);
+
+        Cell cell = row.createCell(codeCol);
+
+        MarkdownInline.setCodeBlockRichTextCell(ctx.fontCache, cell, codeLine, ctx.styles.codeBlockStyle);
     }
 
     static void finish(RenderContext ctx) {
