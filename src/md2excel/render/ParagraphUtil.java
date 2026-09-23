@@ -224,38 +224,14 @@ final class ParagraphUtil {
     }
 
     private static ParagraphBuffer startQuoteBullet(LineInfo li, RenderContext ctx) {
-
-        ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.blankRowStyle);
-        ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
-
-        int quoteStartCol = calcQuoteStartCol(li.getIndent(), ctx.st);
-        int quoteDepth = Math.max(1, li.getQuoteDepth());
-
-        ensureQuotedAutoBlankBeforeChildListIfNeeded(li, ctx, quoteStartCol, quoteDepth);
-
-        int listDepth = ctx.st.updateListDepth(li.getContentIndent(), false);
-
-        int col = clampCol(quoteStartCol + quoteDepth + listDepth, ctx.st);
-
-        ParagraphBuffer p = new ParagraphBuffer(ParagraphBuffer.Kind.QUOTE_BULLET);
-
-        p.baseIndent = li.getContentIndent();
-        p.quoteStartCol = quoteStartCol;
-        p.quoteDepth = quoteDepth;
-
-        p.firstCol = col;
-        p.continuationCol = clampCol(col + 1, ctx.st);
-
-        p.firstLineStyle = ctx.styles.bulletStyle;
-        p.continuationStyle = ctx.styles.bulletStyle;
-        p.firstLinePrefix = li.getListMarkerText() == null ? "・ " : li.getListMarkerText();
-
-        p.appendLine(li.getListContentText(), li.endsWithHardBreak());
-
-        return p;
+        return startQuoteList(li, ctx, false);
     }
 
     private static ParagraphBuffer startQuoteNumber(LineInfo li, RenderContext ctx) {
+        return startQuoteList(li, ctx, true);
+    }
+
+    private static ParagraphBuffer startQuoteList(LineInfo li, RenderContext ctx, boolean ordered) {
 
         ctx.st.ensureAutoBlankIfPrevCodeBlock(ctx.sheet, ctx.styles.blankRowStyle);
         ctx.st.ensureAutoBlankBeforeBlockQuoteIfNeeded(ctx.sheet, ctx.styles.blankRowStyle);
@@ -265,11 +241,15 @@ final class ParagraphUtil {
 
         ensureQuotedAutoBlankBeforeChildListIfNeeded(li, ctx, quoteStartCol, quoteDepth);
 
-        int listDepth = ctx.st.updateListDepth(li.getContentIndent(), true);
+        int listDepth = ctx.st.updateListDepth(li.getContentIndent(), ordered);
 
         int col = clampCol(quoteStartCol + quoteDepth + listDepth, ctx.st);
 
-        ParagraphBuffer p = new ParagraphBuffer(ParagraphBuffer.Kind.QUOTE_NUMBER);
+        ParagraphBuffer.Kind kind = ordered ? ParagraphBuffer.Kind.QUOTE_NUMBER : ParagraphBuffer.Kind.QUOTE_BULLET;
+        CellStyle style = ordered ? ctx.styles.listStyle : ctx.styles.bulletStyle;
+        String defaultMarker = ordered ? "" : "・ ";
+
+        ParagraphBuffer p = new ParagraphBuffer(kind);
 
         p.baseIndent = li.getContentIndent();
         p.quoteStartCol = quoteStartCol;
@@ -278,9 +258,9 @@ final class ParagraphUtil {
         p.firstCol = col;
         p.continuationCol = clampCol(col + 1, ctx.st);
 
-        p.firstLineStyle = ctx.styles.listStyle;
-        p.continuationStyle = ctx.styles.listStyle;
-        p.firstLinePrefix = li.getListMarkerText() == null ? "" : li.getListMarkerText();
+        p.firstLineStyle = style;
+        p.continuationStyle = style;
+        p.firstLinePrefix = li.getListMarkerText() == null ? defaultMarker : li.getListMarkerText();
 
         p.appendLine(li.getListContentText(), li.endsWithHardBreak());
 

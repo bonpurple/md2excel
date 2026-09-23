@@ -167,6 +167,31 @@ public class ParagraphRenderingTest {
     }
 
     @Test
+    public void quotedBulletAndNumberKeepMarkersAndJoinedContinuations() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, "> - bullet", ">   continued", "> 12) number", ">     continued");
+
+            assertTextCells(sheet, "D2=・ bullet continued", "D3=12) number continued");
+            assertEquals(2, sheet.getLastRowNum());
+            assertEquals(BorderStyle.THICK, sheet.getRow(1).getCell(1).getCellStyle().getBorderLeft());
+            assertEquals(BorderStyle.THICK, sheet.getRow(2).getCell(1).getCellStyle().getBorderLeft());
+        }
+    }
+
+    @Test
+    public void nestedQuotedListsKeepDepthAndHardBreakContinuationColumns() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, ">> - outer  ", ">>   continued", ">>   2. nested  ",
+                    ">>      continued");
+
+            assertTextCells(sheet, "E2=・ outer", "F3=continued", "F4=2. nested", "G5=continued");
+            assertEquals(4, sheet.getLastRowNum());
+            assertEquals(BorderStyle.THICK, sheet.getRow(1).getCell(1).getCellStyle().getBorderLeft());
+            assertEquals(BorderStyle.THICK, sheet.getRow(4).getCell(1).getCellStyle().getBorderLeft());
+        }
+    }
+
+    @Test
     public void equalsUnderlineCreatesLevelOneHeading() throws Exception {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             Sheet sheet = render(workbook, "title", "===");
