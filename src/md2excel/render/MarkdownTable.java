@@ -62,35 +62,11 @@ public final class MarkdownTable {
 
     static TableRowRenderResult createTableRows(RenderContext ctx, String line, boolean isHeaderRow, int startCol) {
         List<String> rawCells = MarkdownTableParser.splitTableCells(line);
-        if (!isHeaderRow && ctx.st.table().getEndCol() >= startCol) {
-
-            int headerCellCount = ctx.st.table().getEndCol() - startCol + 1;
-
-            if (rawCells.size() > headerCellCount) {
-                rawCells = new ArrayList<String>(rawCells.subList(0, headerCellCount));
-            } else {
-                while (rawCells.size() < headerCellCount) {
-                    rawCells.add("");
-                }
-            }
-        }
-
-        List<List<List<MarkdownInline.MdSegment>>> cellLines = new ArrayList<List<List<MarkdownInline.MdSegment>>>();
+        rawCells = normalizeCellCount(ctx, rawCells, isHeaderRow, startCol);
+        List<List<List<MarkdownInline.MdSegment>>> cellLines = parseCellDisplayLines(rawCells);
         int maxRowCount = 1;
 
-        for (int i = 0; i < rawCells.size(); i++) {
-            String colText = rawCells.get(i).trim();
-            colText = MarkdownTableParser.unescapePipeOutsideInlineCode(colText);
-
-            List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(colText);
-
-            if (lines.isEmpty()) {
-                lines = Collections.<List<MarkdownInline.MdSegment>>singletonList(
-                        Collections.<MarkdownInline.MdSegment>emptyList());
-            }
-
-            cellLines.add(lines);
-
+        for (List<List<MarkdownInline.MdSegment>> lines : cellLines) {
             if (lines.size() > maxRowCount) {
                 maxRowCount = lines.size();
             }
@@ -147,6 +123,44 @@ public final class MarkdownTable {
         }
 
         return new TableRowRenderResult(firstRowNum, lastRowNum, lastCol, rowStyleRoles);
+    }
+
+    private static List<String> normalizeCellCount(RenderContext ctx, List<String> rawCells, boolean isHeaderRow,
+            int startCol) {
+        if (!isHeaderRow && ctx.st.table().getEndCol() >= startCol) {
+
+            int headerCellCount = ctx.st.table().getEndCol() - startCol + 1;
+
+            if (rawCells.size() > headerCellCount) {
+                rawCells = new ArrayList<String>(rawCells.subList(0, headerCellCount));
+            } else {
+                while (rawCells.size() < headerCellCount) {
+                    rawCells.add("");
+                }
+            }
+        }
+
+        return rawCells;
+    }
+
+    private static List<List<List<MarkdownInline.MdSegment>>> parseCellDisplayLines(List<String> rawCells) {
+        List<List<List<MarkdownInline.MdSegment>>> cellLines = new ArrayList<List<List<MarkdownInline.MdSegment>>>();
+
+        for (int i = 0; i < rawCells.size(); i++) {
+            String colText = rawCells.get(i).trim();
+            colText = MarkdownTableParser.unescapePipeOutsideInlineCode(colText);
+
+            List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(colText);
+
+            if (lines.isEmpty()) {
+                lines = Collections.<List<MarkdownInline.MdSegment>>singletonList(
+                        Collections.<MarkdownInline.MdSegment>emptyList());
+            }
+
+            cellLines.add(lines);
+        }
+
+        return cellLines;
     }
 
     private static CellStyle getTableCellStyle(MdStyleCatalog styles, TableRowStyleRole role) {
