@@ -176,8 +176,7 @@ public class ParagraphRenderingTest {
     @Test
     public void nestedQuotedListsKeepDepthAndHardBreakContinuationColumns() throws Exception {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
-            Sheet sheet = render(workbook, ">> - outer  ", ">>   continued", ">>   2. nested  ",
-                    ">>      continued");
+            Sheet sheet = render(workbook, ">> - outer  ", ">>   continued", ">>   2. nested  ", ">>      continued");
 
             assertTextCells(sheet, "E2=・ outer", "F3=continued", "F4=2. nested", "G5=continued");
             assertEquals(4, sheet.getLastRowNum());
