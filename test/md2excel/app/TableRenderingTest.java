@@ -5,8 +5,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
-import java.util.Arrays;
-
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -19,9 +17,6 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.Test;
-
-import md2excel.config.MdFontSettings;
-import md2excel.config.MdSheetSettings;
 
 /**
  * T3: 未変更コードのExcel出力で観察した表の行展開・列配置・罫線を固定する。
@@ -239,9 +234,7 @@ public class TableRenderingTest {
     }
 
     private static Sheet render(XSSFWorkbook workbook, int columns, String... lines) {
-        new MarkdownWorkbookRenderer().render(Arrays.asList(lines).iterator(), workbook,
-                new MdFontSettings("Meiryo", 16, 14, 12, 11), new MdSheetSettings(columns, VerticalAlignment.BOTTOM));
-        return workbook.getSheet("spec");
+        return RenderingTestSupport.render(workbook, columns, lines);
     }
 
     private static void assertTableSize(Sheet sheet, int lastExcelRow, int cellsPerRow) {

@@ -3,17 +3,13 @@ package md2excel.app;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Font;
-import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.xssf.usermodel.XSSFFont;
@@ -21,7 +17,6 @@ import org.apache.poi.xssf.usermodel.XSSFRichTextString;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.Test;
 
-import md2excel.config.MdFontSettings;
 import md2excel.config.MdSheetSettings;
 
 /**
@@ -308,28 +303,15 @@ public class ParagraphRenderingTest {
     }
 
     private static Sheet render(XSSFWorkbook workbook, String... lines) {
-        return render(workbook, 40, lines);
+        return RenderingTestSupport.render(workbook, lines);
     }
 
     private static Sheet render(XSSFWorkbook workbook, int totalColumnCount, String... lines) {
-        new MarkdownWorkbookRenderer().render(Arrays.asList(lines).iterator(), workbook,
-                new MdFontSettings("Meiryo", 16, 14, 12, 11),
-                new MdSheetSettings(totalColumnCount, VerticalAlignment.BOTTOM));
-        return workbook.getSheet("spec");
+        return RenderingTestSupport.render(workbook, totalColumnCount, lines);
     }
 
     private static void assertTextCells(Sheet sheet, String... expected) {
-        List<String> actual = new ArrayList<String>();
-
-        for (Row row : sheet) {
-            for (Cell cell : row) {
-                if (cell.getCellType() == CellType.STRING && !cell.getStringCellValue().isEmpty()) {
-                    actual.add(cell.getAddress().toString() + "=" + cell.getStringCellValue());
-                }
-            }
-        }
-
-        assertEquals(Arrays.asList(expected), actual);
+        assertEquals(Arrays.asList(expected), RenderingTestSupport.textCells(sheet));
     }
 
     private static void assertCellFont(XSSFWorkbook workbook, Cell cell, int size, boolean bold) {
