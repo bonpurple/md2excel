@@ -1,9 +1,8 @@
 package md2excel.app;
 
+import static md2excel.app.RenderingTestSupport.assertTextCells;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-
-import java.util.Arrays;
 
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
@@ -309,10 +308,6 @@ public class ParagraphRenderingTest {
         return RenderingTestSupport.render(workbook, totalColumnCount, lines);
     }
 
-    private static void assertTextCells(Sheet sheet, String... expected) {
-        assertEquals(Arrays.asList(expected), RenderingTestSupport.textCells(sheet));
-    }
-
     private static void assertCellFont(XSSFWorkbook workbook, Cell cell, int size, boolean bold) {
         Font font = workbook.getFontAt(cell.getCellStyle().getFontIndex());
 
@@ -340,7 +335,7 @@ public class ParagraphRenderingTest {
     }
 
     private static void assertRichTextFont(XSSFWorkbook workbook, Cell cell, boolean bold, boolean italic) {
-        XSSFRichTextString rich = (XSSFRichTextString) cell.getRichStringCellValue();
+        XSSFRichTextString rich = (XSSFRichTextString)cell.getRichStringCellValue();
 
         // POIの書式runの分割数ではなく、各文字に適用される書式を確認する。
         for (int index = 0; index < rich.length(); index++) {

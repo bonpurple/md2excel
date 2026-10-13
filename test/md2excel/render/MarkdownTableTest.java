@@ -65,8 +65,7 @@ public class MarkdownTableTest {
         boolean[] twoColumns = { true, true, false, true, true, true };
         for (int i = 0; i < headers.length; i++) {
             assertEquals(headers[i] + ", two columns", twoColumns[i], MarkdownTable.isTableStart(headers[i], "|-|-|"));
-            assertEquals(headers[i] + ", three columns", !twoColumns[i],
-                    MarkdownTable.isTableStart(headers[i], "|-|-|-|"));
+            assertEquals(headers[i] + ", three columns", !twoColumns[i], MarkdownTable.isTableStart(headers[i], "|-|-|-|"));
         }
     }
 
@@ -133,5 +132,20 @@ public class MarkdownTableTest {
             assertFalse(label + ", separator", MarkdownTable.isTableStart("a|b", input));
             assertFalse(label + ", both", MarkdownTable.isTableStart(input, input));
         }
+    }
+
+    @Test
+    public void unescapesPipesInsideAndOutsideInlineCode() {
+        assertEquals("plain | and `code|span`", MarkdownTableParser.unescapePipesInTableCell("plain \\| and `code\\|span`"));
+    }
+
+    @Test
+    public void splitsUsingBackslashParityAndKeepsCellContentsUnchanged() {
+        assertEquals(java.util.Arrays.asList("a\\|b", "c\\\\", "d"), MarkdownTableParser.splitTableCells("|a\\|b|c\\\\|d|"));
+    }
+
+    @Test
+    public void stillRemovesTrailingOuterPipeEvenWhenEscaped() {
+        assertEquals(java.util.Arrays.asList("a", "b\\"), MarkdownTableParser.splitTableCells("|a|b\\|"));
     }
 }

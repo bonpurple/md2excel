@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import org.apache.poi.ss.usermodel.VerticalAlignment;
@@ -48,24 +49,57 @@ public class Md2ExcelConfigInputTest {
 
     @Test
     public void rejectsOutOfRangeFontSize() {
-        assertError("h1Size must be between 5 and 72: 4", "document.md", "游ゴシック", VerticalAlignment.BOTTOM, 4, 14, 12,
-                11, 40);
+        assertError("h1Size must be between 5 and 72: 4", "document.md", "游ゴシック", VerticalAlignment.BOTTOM, 4, 14, 12, 11, 40);
     }
 
     @Test
     public void rejectsOutOfRangeColumnCount() {
-        assertError("totalColumnCount must be between 3 and 256: 2", "document.md", "游ゴシック", VerticalAlignment.BOTTOM,
-                16, 14, 12, 11, 2);
+        assertError("totalColumnCount must be between 3 and 256: 2", "document.md", "游ゴシック", VerticalAlignment.BOTTOM, 16, 14, 12, 11, 2);
     }
 
-    private static Md2ExcelConfig create(String inputText, String fontName, VerticalAlignment alignment, int h1Size,
-            int h2Size, int h3Size, int normalSize, int totalColumnCount) {
-        return Md2ExcelConfigInput.create(inputText, fontName, alignment, h1Size, h2Size, h3Size, normalSize,
-                totalColumnCount);
+    @Test
+    public void replacesExistingExtension() {
+        Path input = Paths.get("work", "document.md");
+
+        Path output = Md2ExcelConfigInput.replaceExtension(input, ".xlsx");
+
+        assertEquals(Paths.get("work", "document.xlsx"), output);
     }
 
-    private static void assertError(String expectedMessage, String inputText, String fontName,
-            VerticalAlignment alignment, int h1Size, int h2Size, int h3Size, int normalSize, int totalColumnCount) {
+    @Test
+    public void appendsExtensionWhenMissing() {
+        Path input = Paths.get("work", "document");
+
+        Path output = Md2ExcelConfigInput.replaceExtension(input, ".xlsx");
+
+        assertEquals(Paths.get("work", "document.xlsx"), output);
+    }
+
+    @Test
+    public void keepsLeadingDotFileName() {
+        Path input = Paths.get("work", ".markdown");
+
+        Path output = Md2ExcelConfigInput.replaceExtension(input, ".xlsx");
+
+        assertEquals(Paths.get("work", ".markdown.xlsx"), output);
+    }
+
+    @Test
+    public void replacesOnlyLastExtension() {
+        Path input = Paths.get("work", "document.spec.md");
+
+        Path output = Md2ExcelConfigInput.replaceExtension(input, ".xlsx");
+
+        assertEquals(Paths.get("work", "document.spec.xlsx"), output);
+    }
+
+    private static Md2ExcelConfig create(String inputText, String fontName, VerticalAlignment alignment, int h1Size, int h2Size, int h3Size, int normalSize,
+        int totalColumnCount) {
+        return Md2ExcelConfigInput.create(inputText, fontName, alignment, h1Size, h2Size, h3Size, normalSize, totalColumnCount);
+    }
+
+    private static void assertError(String expectedMessage, String inputText, String fontName, VerticalAlignment alignment, int h1Size, int h2Size, int h3Size,
+        int normalSize, int totalColumnCount) {
         try {
             create(inputText, fontName, alignment, h1Size, h2Size, h3Size, normalSize, totalColumnCount);
             fail("IllegalArgumentException expected");

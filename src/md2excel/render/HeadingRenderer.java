@@ -1,6 +1,6 @@
 package md2excel.render;
 
-import static md2excel.render.RenderLayout.clampCol;
+import static md2excel.render.RenderLayout.calcQuoteContentCol;
 import static md2excel.render.RenderLayout.rootCol;
 
 import java.util.Collections;
@@ -23,7 +23,7 @@ final class HeadingRenderer {
 
         CellStyle style = resolveStyle(line.getHeadingLevel(), ctx);
 
-        List<List<MarkdownInline.MdSegment>> lines = parseDisplayLines(line.getHeadingText());
+        List<List<MdSegment>> lines = parseDisplayLines(line.getHeadingText());
 
         for (int index = 0; index < lines.size(); index++) {
 
@@ -31,7 +31,7 @@ final class HeadingRenderer {
 
             Cell cell = row.createCell(rootCol(ctx.st));
 
-            MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, lines.get(index), style);
+            MarkdownRichTextWriter.setResolvedSegmentsCell(ctx.fontCache, cell, lines.get(index), style);
 
             ctx.st.afterWriteHeading();
         }
@@ -41,11 +41,11 @@ final class HeadingRenderer {
 
         CellStyle style = resolveStyle(line.getHeadingLevel(), ctx);
 
-        List<List<MarkdownInline.MdSegment>> lines = parseDisplayLines(line.getHeadingText());
+        List<List<MdSegment>> lines = parseDisplayLines(line.getHeadingText());
 
-        int textCol = clampCol(quoteStartCol + quoteDepth - 1, ctx.st);
+        int textCol = calcQuoteContentCol(quoteStartCol, quoteDepth, ctx.st);
 
-        RenderState.QuoteRowKind rowKind = toQuoteRowKind(line.getHeadingLevel());
+        QuoteRowKind rowKind = toQuoteRowKind(line.getHeadingLevel());
 
         for (int index = 0; index < lines.size(); index++) {
 
@@ -53,7 +53,7 @@ final class HeadingRenderer {
 
             Cell cell = row.createCell(textCol);
 
-            MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, lines.get(index), style);
+            MarkdownRichTextWriter.setResolvedSegmentsCell(ctx.fontCache, cell, lines.get(index), style);
 
             ctx.st.afterWriteQuotedHeading();
 
@@ -61,16 +61,15 @@ final class HeadingRenderer {
         }
     }
 
-    private static List<List<MarkdownInline.MdSegment>> parseDisplayLines(String text) {
+    private static List<List<MdSegment>> parseDisplayLines(String text) {
 
-        List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(text);
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines(text);
 
         if (!lines.isEmpty()) {
             return lines;
         }
 
-        return Collections.<List<MarkdownInline.MdSegment>>singletonList(
-                Collections.<MarkdownInline.MdSegment>emptyList());
+        return Collections.<List<MdSegment>> singletonList(Collections.<MdSegment> emptyList());
     }
 
     private static CellStyle resolveStyle(int headingLevel, RenderContext ctx) {
@@ -90,20 +89,20 @@ final class HeadingRenderer {
         }
     }
 
-    private static RenderState.QuoteRowKind toQuoteRowKind(int headingLevel) {
+    private static QuoteRowKind toQuoteRowKind(int headingLevel) {
 
         switch (headingLevel) {
         case 1:
-            return RenderState.QuoteRowKind.HEADING_1;
+            return QuoteRowKind.HEADING_1;
 
         case 2:
-            return RenderState.QuoteRowKind.HEADING_2;
+            return QuoteRowKind.HEADING_2;
 
         case 3:
-            return RenderState.QuoteRowKind.HEADING_3;
+            return QuoteRowKind.HEADING_3;
 
         default:
-            return RenderState.QuoteRowKind.HEADING_4;
+            return QuoteRowKind.HEADING_4;
         }
     }
 }

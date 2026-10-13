@@ -1,5 +1,6 @@
 package md2excel.render;
 
+import static md2excel.render.RenderLayout.calcQuoteContentCol;
 import static md2excel.render.RenderLayout.calcQuoteStartCol;
 import static md2excel.render.RenderLayout.clampCol;
 import static md2excel.render.RenderLayout.rootCol;
@@ -27,8 +28,7 @@ final class ParagraphUtil {
         }
 
         if (line.isQuoted()) {
-            return line.getKind() == LineKind.BULLET_ITEM || line.getKind() == LineKind.NUMBER_ITEM
-                    || isQuotedNormalParagraphKind(line.getKind());
+            return line.getKind() == LineKind.BULLET_ITEM || line.getKind() == LineKind.NUMBER_ITEM || isQuotedNormalParagraphKind(line.getKind());
         }
 
         switch (line.getKind()) {
@@ -66,8 +66,7 @@ final class ParagraphUtil {
 
         case QUOTE_BULLET:
         case QUOTE_NUMBER:
-            return isQuotedNormalParagraphLine(li) && li.getQuoteDepth() == p.quoteDepth
-                    && li.getContentIndent() > p.baseIndent;
+            return isQuotedNormalParagraphLine(li) && li.getQuoteDepth() == p.quoteDepth && li.getContentIndent() > p.baseIndent;
 
         default:
             return false;
@@ -126,7 +125,7 @@ final class ParagraphUtil {
             return;
         }
 
-        List<List<MarkdownInline.MdSegment>> lines = parseParagraphToDisplayLines(p.getParagraphText());
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines(p.getParagraphText());
         lines = prependPrefixToFirstLine(lines, p.firstLinePrefix);
         lines = ensureAtLeastOneDisplayLine(lines);
 
@@ -204,7 +203,7 @@ final class ParagraphUtil {
 
         int quoteDepth = li.getQuoteDepth();
 
-        int textCol = clampCol(quoteStartCol + quoteDepth - 1, ctx.st);
+        int textCol = calcQuoteContentCol(quoteStartCol, quoteDepth, ctx.st);
 
         ParagraphBuffer p = new ParagraphBuffer(ParagraphBuffer.Kind.QUOTE_NORMAL);
 
@@ -268,71 +267,11 @@ final class ParagraphUtil {
     }
 
     static int getSetextHeadingLevel(ParagraphBuffer p, LineInfo li) {
-
-        if (p == null || li == null || p.isEmpty()) {
+        if (p == null || li == null) {
             return 0;
         }
 
-        // 今回は通常 paragraph の Setext 化だけを対象にする。
-        // 引用・リスト内はそれぞれの対応時に拡張する。
-        if (p.kind != ParagraphBuffer.Kind.NORMAL) {
-            return 0;
-        }
-
-        // CommonMark: heading content の先頭行は最大3スペース。
-        if (p.baseIndent > 3) {
-            return 0;
-        }
-
-        return parseSetextUnderlineLevel(li.getRaw());
-    }
-
-    private static int parseSetextUnderlineLevel(String raw) {
-        if (raw == null || raw.isEmpty()) {
-            return 0;
-        }
-
-        int n = raw.length();
-        int i = 0;
-        int leadingSpaces = 0;
-
-        while (i < n && raw.charAt(i) == ' ') {
-            leadingSpaces++;
-            if (leadingSpaces > 3) {
-                return 0;
-            }
-            i++;
-        }
-
-        // marker 前の tab は4-column境界になるので、
-        // この簡易判定では Setext underline としない。
-        if (i < n && raw.charAt(i) == '\t') {
-            return 0;
-        }
-
-        if (i >= n) {
-            return 0;
-        }
-
-        char marker = raw.charAt(i);
-        if (marker != '=' && marker != '-') {
-            return 0;
-        }
-
-        while (i < n && raw.charAt(i) == marker) {
-            i++;
-        }
-
-        // marker の後ろは space / tab のみ許可。
-        while (i < n) {
-            char ch = raw.charAt(i);
-            if (ch != ' ' && ch != '\t') {
-                return 0;
-            }
-            i++;
-        }
-
-        return marker == '=' ? 1 : 2;
+        return SetextHeadingDetector.detect(li.getRaw(), !p.isEmpty(), p.kind == ParagraphBuffer.Kind.NORMAL, p.baseIndent);
     }
 
     // ------------------------------------------------------------
@@ -346,49 +285,39 @@ final class ParagraphUtil {
         return RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
     }
 
-    private static void writeLine(RenderContext ctx, Row row, int col, CellStyle style,
-            List<MarkdownInline.MdSegment> segments) {
+    private static void writeLine(RenderContext ctx, Row row, int col, CellStyle style, List<MdSegment> segments) {
 
         Cell cell = row.createCell(col);
-        MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, segments, style);
+        MarkdownRichTextWriter.setResolvedSegmentsCell(ctx.fontCache, cell, segments, style);
     }
 
     private static void afterWriteFirstLine(ParagraphBuffer p, RenderContext ctx, int rowNum) {
         switch (p.kind) {
         case NORMAL:
-            ctx.st.afterWriteNormalText(rowNum, p.firstCol, p.baseIndent, p.isListNote);
+            ctx.st.afterWriteNormalText(p.baseIndent, p.isListNote);
             break;
 
         case BULLET:
-            ctx.st.afterWriteBulletItem(rowNum, p.firstCol);
+            ctx.st.afterWriteBulletItem();
             break;
 
         case NUMBER:
-            ctx.st.afterWriteNumberedItem(p.baseIndent, p.firstCol);
+            ctx.st.afterWriteNumberedItem();
             break;
 
         case QUOTE_NORMAL:
-            ctx.st.afterWriteNormalText(rowNum, p.firstCol, p.baseIndent, false);
-
-            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, p.firstCol, RenderState.QuoteRowKind.NORMAL,
-                    p.quoteDepth);
-
+            ctx.st.afterWriteNormalText(p.baseIndent, false);
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, p.firstCol, QuoteRowKind.NORMAL, p.quoteDepth);
             break;
 
         case QUOTE_BULLET:
-            ctx.st.afterWriteBulletItem(rowNum, p.firstCol);
-
-            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, p.firstCol, RenderState.QuoteRowKind.NORMAL,
-                    p.quoteDepth);
-
+            ctx.st.afterWriteBulletItem();
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, p.firstCol, QuoteRowKind.NORMAL, p.quoteDepth);
             break;
 
         case QUOTE_NUMBER:
-            ctx.st.afterWriteNumberedItem(p.baseIndent, p.firstCol);
-
-            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, p.firstCol, RenderState.QuoteRowKind.NORMAL,
-                    p.quoteDepth);
-
+            ctx.st.afterWriteNumberedItem();
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, p.firstCol, QuoteRowKind.NORMAL, p.quoteDepth);
             break;
 
         default:
@@ -397,26 +326,19 @@ final class ParagraphUtil {
     }
 
     private static void afterWriteContinuationLine(ParagraphBuffer p, RenderContext ctx, int rowNum, int col) {
+
         switch (p.kind) {
         case NORMAL:
         case BULLET:
         case NUMBER:
-            ctx.st.afterWriteNormalText(rowNum, col, p.baseIndent, false);
+            ctx.st.afterWriteNormalText(p.baseIndent, false);
             break;
 
         case QUOTE_NORMAL:
-            ctx.st.afterWriteNormalText(rowNum, col, p.baseIndent, false);
-
-            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, col, RenderState.QuoteRowKind.NORMAL, p.quoteDepth);
-
-            break;
-
         case QUOTE_BULLET:
         case QUOTE_NUMBER:
-            ctx.st.afterWriteNormalText(rowNum, col, p.baseIndent, false);
-
-            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, col, RenderState.QuoteRowKind.NORMAL, p.quoteDepth);
-
+            ctx.st.afterWriteNormalText(p.baseIndent, false);
+            ctx.st.recordBlockQuoteRow(rowNum, p.quoteStartCol, col, QuoteRowKind.NORMAL, p.quoteDepth);
             break;
 
         default:
@@ -424,24 +346,23 @@ final class ParagraphUtil {
         }
     }
 
-    private static List<List<MarkdownInline.MdSegment>> prependPrefixToFirstLine(
-            List<List<MarkdownInline.MdSegment>> lines, String prefix) {
+    private static List<List<MdSegment>> prependPrefixToFirstLine(List<List<MdSegment>> lines, String prefix) {
 
         if (prefix == null || prefix.isEmpty()) {
-            return (lines == null) ? Collections.<List<MarkdownInline.MdSegment>>emptyList() : lines;
+            return (lines == null) ? Collections.<List<MdSegment>> emptyList() : lines;
         }
 
-        List<List<MarkdownInline.MdSegment>> out = new ArrayList<List<MarkdownInline.MdSegment>>();
+        List<List<MdSegment>> out = new ArrayList<List<MdSegment>>();
 
         if (lines == null || lines.isEmpty()) {
-            List<MarkdownInline.MdSegment> first = new ArrayList<MarkdownInline.MdSegment>();
-            first.add(new MarkdownInline.MdSegment(prefix, false, false, false));
+            List<MdSegment> first = new ArrayList<MdSegment>();
+            first.add(new MdSegment(prefix, false, false, false));
             out.add(first);
             return out;
         }
 
-        List<MarkdownInline.MdSegment> first = new ArrayList<MarkdownInline.MdSegment>();
-        first.add(new MarkdownInline.MdSegment(prefix, false, false, false));
+        List<MdSegment> first = new ArrayList<MdSegment>();
+        first.add(new MdSegment(prefix, false, false, false));
         first.addAll(lines.get(0));
         out.add(first);
 
@@ -452,15 +373,14 @@ final class ParagraphUtil {
         return out;
     }
 
-    private static List<List<MarkdownInline.MdSegment>> ensureAtLeastOneDisplayLine(
-            List<List<MarkdownInline.MdSegment>> lines) {
+    private static List<List<MdSegment>> ensureAtLeastOneDisplayLine(List<List<MdSegment>> lines) {
 
         if (lines != null && !lines.isEmpty()) {
             return lines;
         }
 
-        List<List<MarkdownInline.MdSegment>> out = new ArrayList<List<MarkdownInline.MdSegment>>();
-        out.add(Collections.<MarkdownInline.MdSegment>emptyList());
+        List<List<MdSegment>> out = new ArrayList<List<MdSegment>>();
+        out.add(Collections.<MdSegment> emptyList());
         return out;
     }
 
@@ -470,7 +390,7 @@ final class ParagraphUtil {
             return;
         }
 
-        List<List<MarkdownInline.MdSegment>> lines = parseParagraphToDisplayLines(p.getParagraphText());
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines(p.getParagraphText());
 
         lines = prependPrefixToFirstLine(lines, p.firstLinePrefix);
         lines = ensureAtLeastOneDisplayLine(lines);
@@ -486,19 +406,6 @@ final class ParagraphUtil {
         // 通常の見出しと同じ状態にする。
         // 次の通常段落開始時に自動空行が1行入る。
         ctx.st.afterWriteHeading();
-    }
-
-    /**
-     * 想定する MarkdownInline 側の追加 API:
-     *
-     * static List<List<MdSegment>> parseParagraphToDisplayLines(String
-     * paragraphText)
-     *
-     * - paragraphText 全体を1回だけ inline 解析する - ParagraphBuffer.SOFT_BREAK_TOKEN は空白扱い
-     * - ParagraphBuffer.HARD_BREAK_TOKEN で表示行を分割 - 戻り値は「表示行ごとの resolved segments」
-     */
-    private static List<List<MarkdownInline.MdSegment>> parseParagraphToDisplayLines(String paragraphText) {
-        return MarkdownInline.parseParagraphToDisplayLines(paragraphText);
     }
 
     // ------------------------------------------------------------
@@ -527,8 +434,7 @@ final class ParagraphUtil {
     // quoted blank helper
     // ------------------------------------------------------------
 
-    private static void ensureQuotedAutoBlankBeforeChildListIfNeeded(LineInfo li, RenderContext ctx, int quoteStartCol,
-            int quoteDepth) {
+    private static void ensureQuotedAutoBlankBeforeChildListIfNeeded(LineInfo li, RenderContext ctx, int quoteStartCol, int quoteDepth) {
 
         if (ctx.st.shouldInsertAutoBlankBeforeChildList(li.getContentIndent())) {
 

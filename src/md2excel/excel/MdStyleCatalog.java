@@ -8,6 +8,9 @@ import org.apache.poi.xssf.usermodel.XSSFColor;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xssf.usermodel.extensions.XSSFCellBorder.BorderSide;
 
+import md2excel.config.MdFontSettings;
+import md2excel.config.MdSheetSettings;
+
 public final class MdStyleCatalog {
 
     public final CellStyle heading1Style;
@@ -48,8 +51,27 @@ public final class MdStyleCatalog {
      */
     private final CellStyle[] codeBlockFrameStyles;
 
-    public MdStyleCatalog(XSSFWorkbook workbook, String fontName, int h1Size, int h2Size, int h3Size, int normalSize,
-            VerticalAlignment verticalAlignment) {
+    public MdStyleCatalog(XSSFWorkbook workbook, MdFontSettings fontSettings, MdSheetSettings sheetSettings) {
+
+        this(workbook, requireFontSettings(fontSettings).getFontName(), fontSettings.getH1Size(), fontSettings.getH2Size(), fontSettings.getH3Size(),
+            fontSettings.getNormalSize(), requireSheetSettings(sheetSettings).getVerticalAlignment());
+    }
+
+    private static MdFontSettings requireFontSettings(MdFontSettings settings) {
+        if (settings == null) {
+            throw new IllegalArgumentException("fontSettings must not be null");
+        }
+        return settings;
+    }
+
+    private static MdSheetSettings requireSheetSettings(MdSheetSettings settings) {
+        if (settings == null) {
+            throw new IllegalArgumentException("sheetSettings must not be null");
+        }
+        return settings;
+    }
+
+    public MdStyleCatalog(XSSFWorkbook workbook, String fontName, int h1Size, int h2Size, int h3Size, int normalSize, VerticalAlignment verticalAlignment) {
 
         MdFontFactory fontFactory = new MdFontFactory(workbook);
 
@@ -57,8 +79,7 @@ public final class MdStyleCatalog {
 
         XSSFCellStyle baseStyle = styleFactory.createBase(verticalAlignment);
 
-        HeadingStyles headings = createHeadingStyles(baseStyle, fontFactory, styleFactory, fontName, h1Size, h2Size,
-                h3Size, normalSize);
+        HeadingStyles headings = createHeadingStyles(baseStyle, fontFactory, styleFactory, fontName, h1Size, h2Size, h3Size, normalSize);
 
         heading1Style = headings.heading1;
         heading2Style = headings.heading2;
@@ -74,7 +95,7 @@ public final class MdStyleCatalog {
 
         XSSFColor codeBackground = styleFactory.color(MdStyleDefaults.CODE_BACKGROUND);
 
-        CodeStyles code = createCodeStyles(workbook, baseStyle, fontFactory, styleFactory, codeBackground);
+        CodeStyles code = createCodeStyles(baseStyle, fontFactory, styleFactory, codeBackground);
 
         codeBlockStyle = code.block;
         codeBlockFrameStyles = code.frameStyles;
@@ -114,8 +135,8 @@ public final class MdStyleCatalog {
         blockQuoteHorizontalRuleBodyStyle = quotes.horizontalRuleBody;
     }
 
-    private static HeadingStyles createHeadingStyles(CellStyle baseStyle, MdFontFactory fontFactory,
-            MdCellStyleFactory styleFactory, String fontName, int h1Size, int h2Size, int h3Size, int normalSize) {
+    private static HeadingStyles createHeadingStyles(CellStyle baseStyle, MdFontFactory fontFactory, MdCellStyleFactory styleFactory, String fontName,
+        int h1Size, int h2Size, int h3Size, int normalSize) {
 
         CellStyle heading1 = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, h1Size, true, false));
 
@@ -123,17 +144,15 @@ public final class MdStyleCatalog {
 
         CellStyle heading3 = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, h3Size, true, false));
 
-        CellStyle heading4 = styleFactory.cloneWithFont(baseStyle,
-                fontFactory.create(fontName, normalSize, true, false));
+        CellStyle heading4 = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, normalSize, true, false));
 
         return new HeadingStyles(heading1, heading2, heading3, heading4);
     }
 
-    private static BasicStyles createBasicStyles(CellStyle baseStyle, MdFontFactory fontFactory,
-            MdCellStyleFactory styleFactory, String fontName, int normalSize) {
+    private static BasicStyles createBasicStyles(CellStyle baseStyle, MdFontFactory fontFactory, MdCellStyleFactory styleFactory, String fontName,
+        int normalSize) {
 
-        CellStyle normal = styleFactory.cloneWithFont(baseStyle,
-                fontFactory.create(fontName, normalSize, false, false));
+        CellStyle normal = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, normalSize, false, false));
 
         CellStyle blankRow = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, 6, false, false));
 
@@ -144,15 +163,13 @@ public final class MdStyleCatalog {
         return new BasicStyles(normal, blankRow, bullet, list);
     }
 
-    private static CodeStyles createCodeStyles(XSSFWorkbook workbook, CellStyle baseStyle, MdFontFactory fontFactory,
-            MdCellStyleFactory styleFactory, XSSFColor codeBackground) {
+    private static CodeStyles createCodeStyles(CellStyle baseStyle, MdFontFactory fontFactory, MdCellStyleFactory styleFactory, XSSFColor codeBackground) {
 
-        XSSFCellStyle codeBlock = styleFactory.cloneWithFont(baseStyle,
-                fontFactory.create(MdStyleDefaults.CODE_CJK_FONT_NAME, 10, false, false));
+        XSSFCellStyle codeBlock = styleFactory.cloneWithFont(baseStyle, fontFactory.create(MdStyleDefaults.CODE_CJK_FONT_NAME, 10, false, false));
 
         styleFactory.applyFill(codeBlock, codeBackground);
 
-        CellStyle[] frameStyles = createCodeBlockFrameStyles(workbook, codeBlock);
+        CellStyle[] frameStyles = createCodeBlockFrameStyles(styleFactory, codeBlock);
 
         return new CodeStyles(codeBlock, frameStyles);
     }
@@ -166,16 +183,14 @@ public final class MdStyleCatalog {
         return horizontalRule;
     }
 
-    private static TableStyles createTableStyles(CellStyle baseStyle, MdFontFactory fontFactory,
-            MdCellStyleFactory styleFactory, String fontName, int normalSize) {
+    private static TableStyles createTableStyles(CellStyle baseStyle, MdFontFactory fontFactory, MdCellStyleFactory styleFactory, String fontName,
+        int normalSize) {
 
-        XSSFCellStyle header = styleFactory.cloneWithFont(baseStyle,
-                fontFactory.create(fontName, normalSize, true, false));
+        XSSFCellStyle header = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, normalSize, true, false));
 
         header.setBorderBottom(BorderStyle.THIN);
 
-        XSSFCellStyle body = styleFactory.cloneWithFont(baseStyle,
-                fontFactory.create(fontName, normalSize, false, false));
+        XSSFCellStyle body = styleFactory.cloneWithFont(baseStyle, fontFactory.create(fontName, normalSize, false, false));
 
         body.setBorderBottom(BorderStyle.HAIR);
 
@@ -186,28 +201,21 @@ public final class MdStyleCatalog {
         return new TableStyles(header, body, bodyLastRow);
     }
 
-    private static QuoteStyles createQuoteStyles(HeadingStyles headings, BasicStyles basic, TableStyles tables,
-            MdCellStyleFactory styleFactory, XSSFColor codeBackground) {
+    private static QuoteStyles createQuoteStyles(HeadingStyles headings, BasicStyles basic, TableStyles tables, MdCellStyleFactory styleFactory,
+        XSSFColor codeBackground) {
 
         /*
          * 引用内見出し
          */
-        CellStyle heading1 = styleFactory.cloneWithFill(headings.heading1, codeBackground);
-
-        CellStyle heading2 = styleFactory.cloneWithFill(headings.heading2, codeBackground);
-
-        CellStyle heading3 = styleFactory.cloneWithFill(headings.heading3, codeBackground);
-
-        CellStyle heading4 = styleFactory.cloneWithFill(headings.heading4, codeBackground);
+        HeadingStyles quoteHeadings = new HeadingStyles(styleFactory.cloneWithFill(headings.heading1, codeBackground),
+            styleFactory.cloneWithFill(headings.heading2, codeBackground), styleFactory.cloneWithFill(headings.heading3, codeBackground),
+            styleFactory.cloneWithFill(headings.heading4, codeBackground));
 
         /*
          * 引用内テーブル
          */
-        CellStyle tableHeader = styleFactory.cloneWithFill(tables.header, codeBackground);
-
-        CellStyle tableBody = styleFactory.cloneWithFill(tables.body, codeBackground);
-
-        CellStyle tableBodyLastRow = styleFactory.cloneWithFill(tables.bodyLastRow, codeBackground);
+        TableStyles quoteTables = new TableStyles(styleFactory.cloneWithFill(tables.header, codeBackground),
+            styleFactory.cloneWithFill(tables.body, codeBackground), styleFactory.cloneWithFill(tables.bodyLastRow, codeBackground));
 
         /*
          * 引用本文
@@ -221,7 +229,6 @@ public final class MdStyleCatalog {
         XSSFCellStyle left = styleFactory.cloneOf(body);
 
         left.setBorderLeft(BorderStyle.THICK);
-
         left.setBorderColor(BorderSide.LEFT, quoteBorder);
 
         /*
@@ -234,7 +241,6 @@ public final class MdStyleCatalog {
         XSSFCellStyle blankLeft = styleFactory.cloneOf(blankBody);
 
         blankLeft.setBorderLeft(BorderStyle.THICK);
-
         blankLeft.setBorderColor(BorderSide.LEFT, quoteBorder);
 
         /*
@@ -244,11 +250,10 @@ public final class MdStyleCatalog {
 
         horizontalRuleBody.setBorderBottom(BorderStyle.HAIR);
 
-        return new QuoteStyles(tableHeader, tableBody, tableBodyLastRow, left, body, blankLeft, blankBody, heading1,
-                heading2, heading3, heading4, horizontalRuleBody);
+        return new QuoteStyles(quoteTables, left, body, blankLeft, blankBody, quoteHeadings, horizontalRuleBody);
     }
 
-    private static CellStyle[] createCodeBlockFrameStyles(XSSFWorkbook workbook, CellStyle codeBlockStyle) {
+    private static CellStyle[] createCodeBlockFrameStyles(MdCellStyleFactory styleFactory, CellStyle codeBlockStyle) {
 
         CellStyle[] frameStyles = new CellStyle[CodeBlockFrameMask.COMBINATION_COUNT];
 
@@ -257,27 +262,21 @@ public final class MdStyleCatalog {
          */
         for (int mask = CodeBlockFrameMask.TOP; mask < frameStyles.length; mask++) {
 
-            XSSFCellStyle style = workbook.createCellStyle();
-
-            style.cloneStyleFrom(codeBlockStyle);
+            XSSFCellStyle style = styleFactory.cloneOf(codeBlockStyle);
 
             if (CodeBlockFrameMask.contains(mask, CodeBlockFrameMask.TOP)) {
-
                 style.setBorderTop(BorderStyle.THIN);
             }
 
             if (CodeBlockFrameMask.contains(mask, CodeBlockFrameMask.BOTTOM)) {
-
                 style.setBorderBottom(BorderStyle.THIN);
             }
 
             if (CodeBlockFrameMask.contains(mask, CodeBlockFrameMask.LEFT)) {
-
                 style.setBorderLeft(BorderStyle.THIN);
             }
 
             if (CodeBlockFrameMask.contains(mask, CodeBlockFrameMask.RIGHT)) {
-
                 style.setBorderRight(BorderStyle.THIN);
             }
 
@@ -375,23 +374,22 @@ public final class MdStyleCatalog {
 
         final CellStyle horizontalRuleBody;
 
-        QuoteStyles(CellStyle tableHeader, CellStyle tableBody, CellStyle tableBodyLastRow, CellStyle left,
-                CellStyle body, CellStyle blankLeft, CellStyle blankBody, CellStyle heading1, CellStyle heading2,
-                CellStyle heading3, CellStyle heading4, CellStyle horizontalRuleBody) {
+        QuoteStyles(TableStyles tables, CellStyle left, CellStyle body, CellStyle blankLeft, CellStyle blankBody, HeadingStyles headings,
+            CellStyle horizontalRuleBody) {
 
-            this.tableHeader = tableHeader;
-            this.tableBody = tableBody;
-            this.tableBodyLastRow = tableBodyLastRow;
+            this.tableHeader = tables.header;
+            this.tableBody = tables.body;
+            this.tableBodyLastRow = tables.bodyLastRow;
 
             this.left = left;
             this.body = body;
             this.blankLeft = blankLeft;
             this.blankBody = blankBody;
 
-            this.heading1 = heading1;
-            this.heading2 = heading2;
-            this.heading3 = heading3;
-            this.heading4 = heading4;
+            this.heading1 = headings.heading1;
+            this.heading2 = headings.heading2;
+            this.heading3 = headings.heading3;
+            this.heading4 = headings.heading4;
 
             this.horizontalRuleBody = horizontalRuleBody;
         }

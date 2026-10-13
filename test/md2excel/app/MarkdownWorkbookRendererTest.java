@@ -6,15 +6,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import java.util.Arrays;
-
 import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.Test;
-
-import md2excel.config.MdFontSettings;
-import md2excel.config.MdSheetSettings;
 
 public class MarkdownWorkbookRendererTest {
 
@@ -23,12 +17,7 @@ public class MarkdownWorkbookRendererTest {
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
 
-            MarkdownWorkbookRenderer renderer = new MarkdownWorkbookRenderer();
-
-            renderer.render(Arrays.asList("## heading", "", "plain paragraph").iterator(), workbook,
-                    validFontSettings(), validSheetSettings());
-
-            Sheet sheet = workbook.getSheet(MarkdownWorkbookRenderer.SHEET_NAME);
+            Sheet sheet = RenderingTestSupport.render(workbook, "## heading", "", "plain paragraph");
 
             assertNotNull(sheet);
 
@@ -46,11 +35,7 @@ public class MarkdownWorkbookRendererTest {
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
 
-            MarkdownWorkbookRenderer renderer = new MarkdownWorkbookRenderer();
-
-            renderer.render(Arrays.asList("text").iterator(), workbook, validFontSettings(), validSheetSettings());
-
-            Sheet sheet = workbook.getSheet(MarkdownWorkbookRenderer.SHEET_NAME);
+            Sheet sheet = RenderingTestSupport.render(workbook, "text");
 
             assertNotNull(sheet);
             assertFalse(sheet.isDisplayGridlines());
@@ -67,24 +52,11 @@ public class MarkdownWorkbookRendererTest {
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
 
-            MarkdownWorkbookRenderer renderer = new MarkdownWorkbookRenderer();
-
-            renderer.render(Arrays.asList("plain paragraph").iterator(), workbook, validFontSettings(),
-                    validSheetSettings());
-
-            Sheet sheet = workbook.getSheet(MarkdownWorkbookRenderer.SHEET_NAME);
+            Sheet sheet = RenderingTestSupport.render(workbook, "plain paragraph");
 
             assertEquals("plain paragraph", sheet.getRow(1).getCell(1).getStringCellValue());
 
             assertNull(sheet.getRow(1).getCell(2));
         }
-    }
-
-    private static MdFontSettings validFontSettings() {
-        return new MdFontSettings("Meiryo", 16, 14, 12, 11);
-    }
-
-    private static MdSheetSettings validSheetSettings() {
-        return new MdSheetSettings(40, VerticalAlignment.BOTTOM);
     }
 }

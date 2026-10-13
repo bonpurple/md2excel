@@ -1,5 +1,7 @@
 package md2excel.app;
 
+import static org.junit.Assert.assertEquals;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -24,9 +26,8 @@ final class RenderingTestSupport {
     }
 
     static Sheet render(XSSFWorkbook workbook, int totalColumnCount, String... lines) {
-        new MarkdownWorkbookRenderer().render(Arrays.asList(lines).iterator(), workbook,
-                new MdFontSettings("Meiryo", 16, 14, 12, 11),
-                new MdSheetSettings(totalColumnCount, VerticalAlignment.BOTTOM));
+        new MarkdownWorkbookRenderer().render(Arrays.asList(lines).iterator(), workbook, new MdFontSettings("Meiryo", 16, 14, 12, 11),
+            new MdSheetSettings(totalColumnCount, VerticalAlignment.BOTTOM));
         return workbook.getSheet("spec");
     }
 
@@ -40,5 +41,9 @@ final class RenderingTestSupport {
             }
         }
         return actual;
+    }
+
+    static void assertTextCells(Sheet sheet, String... expected) {
+        assertEquals(Arrays.asList(expected), textCells(sheet));
     }
 }

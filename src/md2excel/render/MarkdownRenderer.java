@@ -19,7 +19,7 @@ public final class MarkdownRenderer {
         while (cursor.hasNext()) {
             String rawLine = cursor.next();
 
-            boolean tableParsingEnabled = shouldEnableTableParsing(rawLine, cursor.peek(), state);
+            boolean tableParsingEnabled = TableParsingProbe.shouldEnableTableParsing(rawLine, cursor.peek(), state);
 
             LineInfo line = MarkdownLineParser.parse(rawLine, state, tableParsingEnabled);
 
@@ -48,9 +48,7 @@ public final class MarkdownRenderer {
                 paragraph = null;
             }
 
-            MdBlockBoundary.closeTableIfLeaving(line, ctx);
-
-            MdBlockBoundary.apply(MdBlockBoundary.policyFor(line), ctx);
+            MdBlockBoundary.processLineBoundary(line, ctx);
 
             if (ParagraphUtil.isParagraphLine(line)) {
                 paragraph = ParagraphUtil.start(line, ctx);
@@ -67,23 +65,7 @@ public final class MarkdownRenderer {
             renderBlockLine(line, ctx);
         }
 
-        /*
-         * EOFでは、保留段落、未閉鎖コード枠、表、引用装飾をこの順序で確定する。
-         * 引用装飾は引用段落の出力と表の最終行役割の確定後に行い、後続行用の自動空行挿入や通常のブロック境界状態リセットは行わない。
-         */
-        if (paragraph != null) {
-            ParagraphUtil.flush(paragraph, ctx);
-        }
-
-        if (state.codeBlock().isOpen()) {
-            CodeBlockRenderer.finish(ctx);
-        }
-
-        if (state.isLastLineTable()) {
-            MarkdownTable.closeTableIfOpen(ctx.sheet, ctx.styles, state);
-        }
-
-        BlockQuoteUtil.closeBlockQuoteIfOpen(ctx.sheet, ctx.styles, state);
+        MdBlockBoundary.finishAtEof(paragraph, ctx);
     }
 
     private static void renderBlockLine(LineInfo line, RenderContext ctx) {
@@ -125,83 +107,5 @@ public final class MarkdownRenderer {
         default:
             throw new AssertionError("Unhandled LineKind: " + line.getKind());
         }
-    }
-
-    private static final class LineCursor {
-
-        private final Iterator<String> source;
-
-        private boolean hasBuffered;
-        private String buffered;
-
-        LineCursor(Iterator<String> source) {
-            this.source = source;
-            advance();
-        }
-
-        boolean hasNext() {
-            return hasBuffered;
-        }
-
-        String next() {
-            String current = buffered;
-            advance();
-            return current;
-        }
-
-        String peek() {
-            return hasBuffered ? buffered : null;
-        }
-
-        private void advance() {
-            hasBuffered = source.hasNext();
-
-            buffered = hasBuffered ? source.next() : null;
-        }
-    }
-
-    private static final class TableProbeLine {
-
-        final int quoteDepth;
-        final String content;
-
-        TableProbeLine(int quoteDepth, String content) {
-
-            this.quoteDepth = quoteDepth;
-            this.content = content;
-        }
-    }
-
-    private static TableProbeLine unwrapQuoteMarkers(String rawLine) {
-
-        int quoteDepth = 0;
-        String content = rawLine;
-
-        while (content.trim().startsWith(">")) {
-            content = MarkdownLineParser.stripOneQuoteMarker(content);
-
-            quoteDepth++;
-        }
-
-        return new TableProbeLine(quoteDepth, content);
-    }
-
-    private static boolean shouldEnableTableParsing(String rawLine, String nextRawLine, RenderState state) {
-
-        TableProbeLine current = unwrapQuoteMarkers(rawLine);
-
-        boolean continuingTable = state.isLastLineTable() && state.table().getQuoteDepth() == current.quoteDepth;
-
-        if (continuingTable) {
-            return true;
-        }
-
-        if (nextRawLine == null) {
-            return false;
-        }
-
-        TableProbeLine next = unwrapQuoteMarkers(nextRawLine);
-
-        return current.quoteDepth == next.quoteDepth && MarkdownTable.isTableStart(current.content, next.content);
     }
 }

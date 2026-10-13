@@ -1,6 +1,6 @@
 package md2excel.render;
 
-import static md2excel.render.RenderLayout.clampCol;
+import static md2excel.render.RenderLayout.calcQuoteContentCol;
 
 import java.util.Collections;
 
@@ -17,11 +17,9 @@ final class HorizontalRuleRenderer {
 
     static void render(RenderContext ctx) {
 
-        Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx, RowUtil.ReuseKind.HORIZONTAL_RULE,
-                ctx.styles.blankRowStyle);
+        Row row = RowUtil.createRowOrReusePreviousMarkdownBlankForRule(ctx, ctx.styles.blankRowStyle);
 
-        applyHorizontalRuleStyle(row, ctx.styles.horizontalRuleStyle, ctx.st.getStartColIndex(),
-                ctx.st.getRenderEndColExclusive());
+        applyHorizontalRuleStyle(row, ctx.styles.horizontalRuleStyle, ctx.st.getStartColIndex(), ctx.st.getRenderEndColExclusive());
 
         ctx.st.afterWriteHorizontalRule();
     }
@@ -51,16 +49,14 @@ final class HorizontalRuleRenderer {
         } else {
             row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.blankRowStyle);
 
-            int contentCol = clampCol(quoteStartCol + quoteDepth - 1, ctx.st);
+            int contentCol = calcQuoteContentCol(quoteStartCol, quoteDepth, ctx.st);
 
             Cell cell = row.createCell(contentCol);
 
-            MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell,
-                    Collections.<MarkdownInline.MdSegment>emptyList(), ctx.styles.blankRowStyle);
+            MarkdownRichTextWriter.setResolvedSegmentsCell(ctx.fontCache, cell, Collections.<MdSegment> emptyList(), ctx.styles.blankRowStyle);
         }
 
-        ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, RenderState.QuoteRowKind.HORIZONTAL_RULE,
-                quoteDepth);
+        ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, QuoteRowKind.HORIZONTAL_RULE, quoteDepth);
 
         ctx.st.afterWriteQuotedHorizontalRule();
     }

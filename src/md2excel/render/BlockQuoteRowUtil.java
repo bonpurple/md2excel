@@ -18,7 +18,7 @@ final class BlockQuoteRowUtil {
 
         Cell cell = row.createCell(contentCol);
 
-        MarkdownInline.setResolvedSegmentsCell(ctx.fontCache, cell, Collections.<MarkdownInline.MdSegment>emptyList(),
+        MarkdownRichTextWriter.setResolvedSegmentsCell(ctx.fontCache, cell, Collections.<MdSegment>emptyList(),
                 ctx.styles.blankRowStyle);
 
         ctx.st.afterWriteQuotedBlank(row.getRowNum(), quoteStartCol, contentCol, quoteDepth);

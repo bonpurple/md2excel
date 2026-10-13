@@ -10,7 +10,10 @@ import java.nio.file.StandardCopyOption;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
- * Workbookを一時ファイルへ書き込み、 成功後に最終出力ファイルへ置換する。
+ * Workbookを出力先と同じディレクトリの一時ファイルへ書き込み、 書き込み成功後に最終出力先へ移動する。
+ *
+ * <p>
+ * まず原子的な移動を試みるが、対応していない場合は通常の移動へ フォールバックする。すべての環境で置換の原子性を保証するものではない。 また、ディスクへの永続化（fsync）は保証しない。
  */
 final class AtomicWorkbookWriter {
 

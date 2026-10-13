@@ -53,4 +53,11 @@ public class MdTextUtilTest {
         assertFalse(MdTextUtil.isHorizontalRuleLine("--"));
         assertFalse(MdTextUtil.isHorizontalRuleLine("-*-"));
     }
+
+    @Test
+    public void tabAlwaysRepresentsFourColumnsRegardlessOfPosition() {
+        assertEquals("x    y", MdTextUtil.expandTabs("x\ty"));
+        assertEquals(5, MdTextUtil.countLeadingSpacesOrTabs(" \ttext"));
+        assertEquals("   text", MdTextUtil.removeLeadingIndentColumns(" \ttext", 2));
+    }
 }

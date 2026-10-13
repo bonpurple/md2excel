@@ -10,7 +10,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import md2excel.excel.MdStyleDefaults;
 
-public final class MarkdownFontCache {
+final class MarkdownFontCache {
 
     private final XSSFWorkbook workbook;
 
@@ -18,7 +18,7 @@ public final class MarkdownFontCache {
 
     private final Map<Short, CodeBlockFonts> codeBlockFontsByStyleFontIndex = new HashMap<Short, CodeBlockFonts>();
 
-    public MarkdownFontCache(XSSFWorkbook workbook) {
+    MarkdownFontCache(XSSFWorkbook workbook) {
 
         if (workbook == null) {
             throw new IllegalArgumentException("workbook must not be null");
@@ -33,7 +33,7 @@ public final class MarkdownFontCache {
             throw new IllegalArgumentException("baseStyle must not be null");
         }
 
-        short key = (short) baseStyle.getFontIndex();
+        short key = (short)baseStyle.getFontIndex();
 
         InlineFonts cached = inlineFontsByBaseFontIndex.get(Short.valueOf(key));
 
@@ -62,20 +62,15 @@ public final class MarkdownFontCache {
 
         XSSFColor inlineCodeColor = new XSSFColor(MdStyleDefaults.INLINE_CODE_TEXT, null);
 
-        XSSFFont codeAscii = createColoredFont(MdStyleDefaults.CODE_ASCII_FONT_NAME, baseFont.getFontHeightInPoints(),
-                false, inlineCodeColor);
+        XSSFFont codeAscii = createColoredFont(MdStyleDefaults.CODE_ASCII_FONT_NAME, baseFont.getFontHeightInPoints(), false, inlineCodeColor);
 
-        XSSFFont codeCjk = createColoredFont(MdStyleDefaults.CODE_CJK_FONT_NAME, baseFont.getFontHeightInPoints(),
-                false, inlineCodeColor);
+        XSSFFont codeCjk = createColoredFont(MdStyleDefaults.CODE_CJK_FONT_NAME, baseFont.getFontHeightInPoints(), false, inlineCodeColor);
 
-        XSSFFont codeAsciiBold = createColoredFont(MdStyleDefaults.CODE_ASCII_FONT_NAME,
-                baseFont.getFontHeightInPoints(), true, inlineCodeColor);
+        XSSFFont codeAsciiBold = createColoredFont(MdStyleDefaults.CODE_ASCII_FONT_NAME, baseFont.getFontHeightInPoints(), true, inlineCodeColor);
 
-        XSSFFont codeCjkBold = createColoredFont(MdStyleDefaults.CODE_CJK_FONT_NAME, baseFont.getFontHeightInPoints(),
-                true, inlineCodeColor);
+        XSSFFont codeCjkBold = createColoredFont(MdStyleDefaults.CODE_CJK_FONT_NAME, baseFont.getFontHeightInPoints(), true, inlineCodeColor);
 
-        return new InlineFonts(baseFont, boldFont, italicFont, boldItalicFont, codeAscii, codeCjk, codeAsciiBold,
-                codeCjkBold, baseBold);
+        return new InlineFonts(baseFont, boldFont, italicFont, boldItalicFont, codeAscii, codeCjk, codeAsciiBold, codeCjkBold, baseBold);
     }
 
     CodeBlockFonts getCodeBlockFonts(CellStyle codeBlockStyle) {
@@ -84,7 +79,7 @@ public final class MarkdownFontCache {
             throw new IllegalArgumentException("codeBlockStyle must not be null");
         }
 
-        short key = (short) codeBlockStyle.getFontIndex();
+        short key = (short)codeBlockStyle.getFontIndex();
 
         CodeBlockFonts cached = codeBlockFontsByStyleFontIndex.get(Short.valueOf(key));
 
@@ -103,11 +98,9 @@ public final class MarkdownFontCache {
 
         XSSFFont baseFont = workbook.getFontAt(codeBlockStyle.getFontIndex());
 
-        XSSFFont asciiFont = createFont(MdStyleDefaults.CODE_ASCII_FONT_NAME, baseFont.getFontHeightInPoints(), false,
-                false);
+        XSSFFont asciiFont = createFont(MdStyleDefaults.CODE_ASCII_FONT_NAME, baseFont.getFontHeightInPoints(), false, false);
 
-        XSSFFont cjkFont = createFont(MdStyleDefaults.CODE_CJK_FONT_NAME, baseFont.getFontHeightInPoints(), false,
-                false);
+        XSSFFont cjkFont = createFont(MdStyleDefaults.CODE_CJK_FONT_NAME, baseFont.getFontHeightInPoints(), false, false);
 
         return new CodeBlockFonts(asciiFont, cjkFont);
     }
@@ -147,8 +140,8 @@ public final class MarkdownFontCache {
 
         final boolean baseBold;
 
-        InlineFonts(XSSFFont baseFont, XSSFFont boldFont, XSSFFont italicFont, XSSFFont boldItalicFont,
-                XSSFFont codeAscii, XSSFFont codeCjk, XSSFFont codeAsciiBold, XSSFFont codeCjkBold, boolean baseBold) {
+        InlineFonts(XSSFFont baseFont, XSSFFont boldFont, XSSFFont italicFont, XSSFFont boldItalicFont, XSSFFont codeAscii, XSSFFont codeCjk,
+            XSSFFont codeAsciiBold, XSSFFont codeCjkBold, boolean baseBold) {
 
             this.baseFont = baseFont;
             this.boldFont = boldFont;

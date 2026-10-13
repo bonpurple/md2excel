@@ -39,8 +39,7 @@ final class CodeBlockRenderer {
 
     static void renderLine(LineInfo line, RenderContext ctx) {
 
-        Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.CODE_LINE,
-                ctx.styles.normalStyle);
+        Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
 
         CodeBlockState codeBlock = ctx.st.codeBlock();
 
@@ -54,7 +53,7 @@ final class CodeBlockRenderer {
 
         codeBlock.recordLine(row.getRowNum(), frameStartCol);
 
-        ctx.st.afterWriteCodeLine(codeCol);
+        ctx.st.afterWriteCodeLine();
     }
 
     static void renderQuotedFence(LineInfo line, int quoteStartCol, int quoteDepth, RenderContext ctx) {
@@ -65,8 +64,7 @@ final class CodeBlockRenderer {
         if (!codeBlock.isOpen()) {
             CodeFence fence = requireOpeningFence(line);
 
-            codeBlock.open(fence.getMarker(), fence.getLength(), line.getContentIndent(), true, quoteStartCol,
-                    quoteDepth);
+            codeBlock.open(fence.getMarker(), fence.getLength(), line.getContentIndent(), true, quoteStartCol, quoteDepth);
 
             ctx.st.afterOpenQuotedCodeFence();
             return;
@@ -78,8 +76,7 @@ final class CodeBlockRenderer {
 
     static void renderQuotedLine(LineInfo line, RenderContext ctx) {
 
-        Row row = RowUtil.createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, RowUtil.ReuseKind.CODE_LINE,
-                ctx.styles.normalStyle);
+        Row row = RowUtil.createRow(ctx.sheet, ctx.st, ctx.styles.normalStyle);
 
         CodeBlockState codeBlock = ctx.st.codeBlock();
 
@@ -98,9 +95,9 @@ final class CodeBlockRenderer {
 
         codeBlock.recordLine(row.getRowNum(), frameStartCol);
 
-        ctx.st.afterWriteQuotedCodeLine(codeCol);
+        ctx.st.afterWriteQuotedCodeLine();
 
-        ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, RenderState.QuoteRowKind.CODE, quoteDepth);
+        ctx.st.recordBlockQuoteRow(row.getRowNum(), quoteStartCol, -1, QuoteRowKind.CODE, quoteDepth);
     }
 
     private static void writeCodeLine(LineInfo line, Row row, int codeCol, int openingIndent, RenderContext ctx) {

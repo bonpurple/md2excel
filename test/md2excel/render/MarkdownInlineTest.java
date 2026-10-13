@@ -12,7 +12,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void parsesPlainText() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("plain text");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("plain text");
 
         assertEquals(1, segments.size());
 
@@ -21,7 +21,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void parsesStrongEmphasis() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("**bold**");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("**bold**");
 
         assertEquals(1, segments.size());
 
@@ -30,7 +30,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void parsesEmphasis() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("*italic*");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("*italic*");
 
         assertEquals(1, segments.size());
 
@@ -39,12 +39,11 @@ public class MarkdownInlineTest {
 
     @Test
     public void parsesNestedStrongAndEmphasis() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline
-                .parseParagraphToSingleLineSegments("***bold italic***");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("***bold italic***");
 
         assertEquals(1, segments.size());
 
-        MarkdownInline.MdSegment segment = segments.get(0);
+        MdSegment segment = segments.get(0);
 
         assertEquals("bold italic", segment.text);
         assertTrue(segment.inBold);
@@ -54,8 +53,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void parsesStrongContainingEmphasis() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline
-                .parseParagraphToSingleLineSegments("**bold *italic* bold**");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("**bold *italic* bold**");
 
         assertEquals(3, segments.size());
 
@@ -68,7 +66,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void escapedAsteriskIsPlainText() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("\\*not italic\\*");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("\\*not italic\\*");
 
         assertEquals(1, segments.size());
 
@@ -77,7 +75,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void escapedAsteriskInsideStrongIsPlainCharacter() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("**a\\*b**");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("**a\\*b**");
 
         assertEquals(1, segments.size());
 
@@ -86,7 +84,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void inlineCodeDoesNotParseEmphasis() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("`*not italic*`");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("`*not italic*`");
 
         assertEquals(1, segments.size());
 
@@ -95,7 +93,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void multipleBackticksAllowSingleBacktickInsideCode() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("``a`b``");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("``a`b``");
 
         assertEquals(1, segments.size());
 
@@ -104,7 +102,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void unmatchedBackticksRemainPlainText() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("`unclosed");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("`unclosed");
 
         assertEquals(1, segments.size());
 
@@ -113,7 +111,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void brOutsideCodeCreatesDisplayLine() {
-        List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines("foo<br>**bar**");
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines("foo<br>**bar**");
 
         assertEquals(2, lines.size());
 
@@ -126,8 +124,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void brInsideInlineCodeRemainsLiteral() {
-        List<List<MarkdownInline.MdSegment>> lines = MarkdownInline
-                .parseParagraphToDisplayLines("`aa<br>bb` and **cc**");
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines("`aa<br>bb` and **cc**");
 
         assertEquals(1, lines.size());
 
@@ -144,7 +141,7 @@ public class MarkdownInlineTest {
     public void softBreakBecomesSingleSpace() {
         String paragraph = "abc" + ParagraphBuffer.SOFT_BREAK_TOKEN + "def";
 
-        List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(paragraph);
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines(paragraph);
 
         assertEquals(1, lines.size());
         assertEquals(1, lines.get(0).size());
@@ -156,7 +153,7 @@ public class MarkdownInlineTest {
     public void hardBreakCreatesNextDisplayLine() {
         String paragraph = "abc" + ParagraphBuffer.HARD_BREAK_TOKEN + "**def**";
 
-        List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(paragraph);
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines(paragraph);
 
         assertEquals(2, lines.size());
 
@@ -169,7 +166,7 @@ public class MarkdownInlineTest {
     public void softBreakInsideInlineCodeBecomesSpace() {
         String paragraph = "`aa" + ParagraphBuffer.SOFT_BREAK_TOKEN + "bb`";
 
-        List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(paragraph);
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines(paragraph);
 
         assertEquals(1, lines.size());
 
@@ -180,7 +177,7 @@ public class MarkdownInlineTest {
     public void hardBreakInsideInlineCodeBecomesSpace() {
         String paragraph = "`aa" + ParagraphBuffer.HARD_BREAK_TOKEN + "bb`";
 
-        List<List<MarkdownInline.MdSegment>> lines = MarkdownInline.parseParagraphToDisplayLines(paragraph);
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines(paragraph);
 
         assertEquals(1, lines.size());
 
@@ -189,7 +186,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void underscoreInsideWordDoesNotCreateEmphasis() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("foo_bar_baz");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("foo_bar_baz");
 
         assertEquals(1, segments.size());
 
@@ -198,7 +195,7 @@ public class MarkdownInlineTest {
 
     @Test
     public void unmatchedEmphasisDelimiterRemainsText() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("*unclosed");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("*unclosed");
 
         assertEquals(1, segments.size());
 
@@ -207,13 +204,27 @@ public class MarkdownInlineTest {
 
     @Test
     public void ruleOfThreeDoesNotCreateInvalidEmphasis() {
-        List<MarkdownInline.MdSegment> segments = MarkdownInline.parseParagraphToSingleLineSegments("a**b*c");
+        List<MdSegment> segments = MarkdownInlineParser.parseParagraphToSingleLineSegments("a**b*c");
 
         assertEquals("a**b*c", toPlainText(segments));
     }
 
-    private static void assertSegment(MarkdownInline.MdSegment segment, String text, boolean bold, boolean italic,
-            boolean code) {
+    @Test
+    public void tokenizationEmphasisAndDisplaySplitWorkTogether() {
+        List<List<MdSegment>> lines = MarkdownInlineParser.parseParagraphToDisplayLines("*a* and `b`<br>**c**");
+
+        assertEquals(2, lines.size());
+        assertEquals(3, lines.get(0).size());
+
+        assertSegment(lines.get(0).get(0), "a", false, true, false);
+        assertSegment(lines.get(0).get(1), " and ", false, false, false);
+        assertSegment(lines.get(0).get(2), "b", false, false, true);
+
+        assertEquals(1, lines.get(1).size());
+        assertSegment(lines.get(1).get(0), "c", true, false, false);
+    }
+
+    private static void assertSegment(MdSegment segment, String text, boolean bold, boolean italic, boolean code) {
 
         assertEquals(text, segment.text);
         assertEquals(bold, segment.inBold);
@@ -221,11 +232,11 @@ public class MarkdownInlineTest {
         assertEquals(code, segment.inCode);
     }
 
-    private static String toPlainText(List<MarkdownInline.MdSegment> segments) {
+    private static String toPlainText(List<MdSegment> segments) {
 
         StringBuilder out = new StringBuilder();
 
-        for (MarkdownInline.MdSegment segment : segments) {
+        for (MdSegment segment : segments) {
             out.append(segment.text);
         }
 

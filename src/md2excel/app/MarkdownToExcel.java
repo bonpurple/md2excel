@@ -1,14 +1,13 @@
 package md2excel.app;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
 
 import javax.swing.JOptionPane;
-import javax.swing.SwingUtilities;
 
 import md2excel.config.Md2ExcelConfig;
 import md2excel.config.Md2ExcelConfigDialog;
+import md2excel.swing.SwingEdt;
 
 public final class MarkdownToExcel {
 
@@ -92,41 +91,6 @@ public final class MarkdownToExcel {
      */
     private static void showMessageDialogOnEdt(final String message, final String title, final int messageType) {
 
-        Runnable showDialog = new Runnable() {
-            @Override
-            public void run() {
-                JOptionPane.showMessageDialog(null, message, title, messageType);
-            }
-        };
-
-        if (SwingUtilities.isEventDispatchThread()) {
-            showDialog.run();
-            return;
-        }
-
-        try {
-            SwingUtilities.invokeAndWait(showDialog);
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-
-            throw new IllegalStateException("ダイアログの表示中に処理が中断されました。", e);
-
-        } catch (InvocationTargetException e) {
-            rethrowDialogFailure(e.getCause());
-        }
-    }
-
-    private static void rethrowDialogFailure(Throwable cause) {
-
-        if (cause instanceof RuntimeException) {
-            throw (RuntimeException) cause;
-        }
-
-        if (cause instanceof Error) {
-            throw (Error) cause;
-        }
-
-        throw new IllegalStateException("ダイアログの表示に失敗しました。", cause);
+        SwingEdt.run(() -> JOptionPane.showMessageDialog(null, message, title, messageType), "ダイアログの表示中に処理が中断されました。", "ダイアログの表示に失敗しました。");
     }
 }

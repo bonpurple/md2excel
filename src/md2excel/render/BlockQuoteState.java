@@ -21,7 +21,7 @@ final class BlockQuoteState {
      */
     private boolean lastWasBlockQuote;
 
-    private final Map<Integer, RenderState.QuoteRowInfo> rows = new HashMap<Integer, RenderState.QuoteRowInfo>();
+    private final Map<Integer, QuoteRowInfo> rows = new HashMap<Integer, QuoteRowInfo>();
 
     boolean isOpen() {
         return open;
@@ -58,7 +58,7 @@ final class BlockQuoteState {
     /**
      * 引用行とその描画情報を記録する。
      */
-    void recordRow(int rowNum, int quoteDecorCol, RenderState.QuoteRowInfo rowInfo) {
+    void recordRow(int rowNum, int quoteDecorCol, QuoteRowInfo rowInfo) {
 
         if (!open || firstRow < 0) {
             open = true;
@@ -77,29 +77,29 @@ final class BlockQuoteState {
         lastWasBlockQuote = true;
     }
 
-    RenderState.QuoteRowInfo getRowInfo(int rowNum) {
+    QuoteRowInfo getRowInfo(int rowNum) {
         return rows.get(Integer.valueOf(rowNum));
     }
 
-    void replaceRowInfo(int rowNum, RenderState.QuoteRowInfo rowInfo) {
+    void replaceRowInfo(int rowNum, QuoteRowInfo rowInfo) {
 
         rows.put(Integer.valueOf(rowNum), rowInfo);
     }
 
-    void updateTableRowStyleRole(int rowNum, MarkdownTable.TableRowStyleRole role) {
+    void updateTableRowStyleRole(int rowNum, TableRowStyleRole role) {
 
-        RenderState.QuoteRowInfo current = getRowInfo(rowNum);
+        QuoteRowInfo current = getRowInfo(rowNum);
 
-        if (current == null || current.getKind() != RenderState.QuoteRowKind.TABLE) {
+        if (current == null || current.getKind() != QuoteRowKind.TABLE) {
             return;
         }
 
         replaceRowInfo(rowNum, current.withTableRowStyleRole(role));
     }
 
-    boolean isRowKind(int rowNum, RenderState.QuoteRowKind kind) {
+    boolean isRowKind(int rowNum, QuoteRowKind kind) {
 
-        RenderState.QuoteRowInfo info = getRowInfo(rowNum);
+        QuoteRowInfo info = getRowInfo(rowNum);
 
         return info != null && info.getKind() == kind;
     }

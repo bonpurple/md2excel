@@ -18,8 +18,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.Test;
 
 /**
- * T2: 未変更コードで観察した空行・ブロック境界・EOFの描画結果を固定する。
- * Markdown仕様から期待値を推測せず、セル位置・値・罫線・書式を検証する。
+ * T2: 未変更コードで観察した空行・ブロック境界・EOFの描画結果を固定する。 Markdown仕様から期待値を推測せず、セル位置・値・罫線・書式を検証する。
  */
 public class BlockBoundaryRenderingTest {
 
@@ -212,8 +211,7 @@ public class BlockBoundaryRenderingTest {
                 assertEquals(BorderStyle.THICK, cell(sheet, "B" + row).getCellStyle().getBorderLeft());
                 for (String column : Arrays.asList("C", "D")) {
                     Cell tableCell = cell(sheet, column + row);
-                    assertEquals(row == 2 ? BorderStyle.THIN : row == 3 ? BorderStyle.HAIR : BorderStyle.NONE,
-                            tableCell.getCellStyle().getBorderBottom());
+                    assertEquals(row == 2 ? BorderStyle.THIN : row == 3 ? BorderStyle.HAIR : BorderStyle.NONE, tableCell.getCellStyle().getBorderBottom());
                     assertEquals(FillPatternType.SOLID_FOREGROUND, tableCell.getCellStyle().getFillPattern());
                     assertFont(workbook, tableCell, 11, row == 2);
                 }
@@ -226,12 +224,73 @@ public class BlockBoundaryRenderingTest {
         }
     }
 
+    @Test
+    public void tableAfterMarkdownBlankKeepsBlankRow() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, "first", "", "| h1 | h2 |", "| --- | --- |", "| a | b |");
+
+            assertOutput(sheet, 5, "B2=first", "B4=h1", "C4=h2", "B5=a", "C5=b");
+            assertEmptyRow(sheet, 3);
+        }
+    }
+
+    @Test
+    public void horizontalRuleReusesMarkdownBlankAfterTable() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, "| h1 | h2 |", "| --- | --- |", "| a | b |", "", "---");
+
+            assertOutput(sheet, 4, "B2=h1", "C2=h2", "B3=a", "C3=b");
+            assertEquals(BorderStyle.HAIR, cell(sheet, "B4").getCellStyle().getBorderBottom());
+        }
+    }
+
+    @Test
+    public void quotedParagraphBlankThenNormalParagraphKeepsOneBlank() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, "> quote", "", "body");
+
+            assertOutput(sheet, 4, "C2=quote", "B4=body");
+            assertEmptyRow(sheet, 3);
+
+            assertEquals(BorderStyle.THICK, cell(sheet, "B2").getCellStyle().getBorderLeft());
+            assertEquals(FillPatternType.SOLID_FOREGROUND, cell(sheet, "C2").getCellStyle().getFillPattern());
+            assertPlainCell(workbook, cell(sheet, "B4"));
+        }
+    }
+
+    @Test
+    public void codeBlockThenQuoteInsertsOneSeparatorBlank() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, "```", "code", "```", "> quote");
+
+            assertOutput(sheet, 4, "C2=code", "C4=quote");
+            assertSingleRowCodeFrame(workbook, sheet, 2);
+            assertEmptyRow(sheet, 3);
+
+            assertEquals(BorderStyle.THICK, cell(sheet, "B4").getCellStyle().getBorderLeft());
+            assertEquals(FillPatternType.SOLID_FOREGROUND, cell(sheet, "C4").getCellStyle().getFillPattern());
+        }
+    }
+
+    @Test
+    public void tableBlankThenHeadingKeepsSeparatorAndFinalizesTable() throws Exception {
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = render(workbook, "| h1 | h2 |", "| --- | --- |", "| a | b |", "", "# next");
+
+            assertOutput(sheet, 5, "B2=h1", "C2=h2", "B3=a", "C3=b", "B5=next");
+            assertTableEnd(workbook, sheet);
+            assertEmptyRow(sheet, 4);
+            assertFont(workbook, cell(sheet, "B5"), 16, true);
+        }
+    }
+
     private static Sheet render(XSSFWorkbook workbook, String... lines) {
         return RenderingTestSupport.render(workbook, lines);
     }
 
     private static void assertOutput(Sheet sheet, int lastExcelRow, String... expected) {
-        assertEquals(Arrays.asList(expected), RenderingTestSupport.textCells(sheet));
+        RenderingTestSupport.assertTextCells(sheet, expected);
         assertEquals(lastExcelRow - 1, sheet.getLastRowNum());
     }
 

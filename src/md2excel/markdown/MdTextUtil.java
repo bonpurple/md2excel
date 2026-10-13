@@ -2,6 +2,7 @@ package md2excel.markdown;
 
 public final class MdTextUtil {
     private static final String TAB_SPACES = "    ";
+    private static final int TAB_WIDTH = TAB_SPACES.length();
 
     private MdTextUtil() {
     }
@@ -20,7 +21,7 @@ public final class MdTextUtil {
             if (ch == ' ')
                 count++;
             else if (ch == '\t')
-                count += 4;
+                count += TAB_WIDTH;
             else
                 break;
         }
@@ -168,7 +169,7 @@ public final class MdTextUtil {
                 break;
             }
 
-            int width = (ch == '\t') ? 4 : 1;
+            int width = (ch == '\t') ? TAB_WIDTH : 1;
             int remaining = columnsToRemove - removedColumns;
 
             // タブの一部だけを除去する場合

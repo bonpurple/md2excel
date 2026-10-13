@@ -3,7 +3,7 @@ package md2excel.markdown;
 /**
  * Markdownの1行を解析した結果。
  *
- * 引用行の場合も再帰的なLineInfoを作らず、 quoteDepthと引用マーカー除去後のcontent情報を保持する。
+ * 引用行の場合も再帰的なLineInfoを作らず、quoteDepthと 引用マーカー除去後のcontent情報を保持する。
  */
 public final class LineInfo {
 
@@ -21,17 +21,13 @@ public final class LineInfo {
     private final int quoteDepth;
     private final LineKind kind;
 
-    private final int headingLevel;
-    private final String headingText;
+    /**
+     * kindに応じて、HeadingDetail、ParagraphDetail、ListDetail、 または詳細なし（null）のいずれかを保持する。
+     */
+    private final Detail detail;
 
-    private final boolean endsWithHardBreak;
-    private final String paragraphText;
-    private final String listMarkerText;
-    private final String listContentText;
-
-    private LineInfo(String raw, String trimmed, int indent, String contentRaw, String contentTrimmed,
-            int contentIndent, int quoteDepth, LineKind kind, int headingLevel, String headingText,
-            boolean endsWithHardBreak, String paragraphText, String listMarkerText, String listContentText) {
+    private LineInfo(String raw, String trimmed, int indent, String contentRaw, String contentTrimmed, int contentIndent, int quoteDepth, LineKind kind,
+        Detail detail) {
 
         if (kind == null) {
             throw new IllegalArgumentException("kind must not be null");
@@ -40,6 +36,8 @@ public final class LineInfo {
         if (quoteDepth < 0) {
             throw new IllegalArgumentException("quoteDepth must not be negative: " + quoteDepth);
         }
+
+        validateDetail(kind, detail);
 
         this.raw = raw;
         this.trimmed = trimmed;
@@ -51,76 +49,57 @@ public final class LineInfo {
 
         this.quoteDepth = quoteDepth;
         this.kind = kind;
-
-        this.headingLevel = headingLevel;
-        this.headingText = headingText;
-
-        this.endsWithHardBreak = endsWithHardBreak;
-        this.paragraphText = paragraphText;
-        this.listMarkerText = listMarkerText;
-        this.listContentText = listContentText;
+        this.detail = detail;
     }
 
     public static LineInfo codeFence(String raw, String trimmed, int indent) {
-
         return simple(raw, trimmed, indent, LineKind.CODE_FENCE);
     }
 
     public static LineInfo codeLine(String raw, String trimmed, int indent) {
-
         return simple(raw, trimmed, indent, LineKind.CODE_LINE);
     }
 
     public static LineInfo blank(String raw, String trimmed, int indent) {
-
         return simple(raw, trimmed, indent, LineKind.BLANK);
     }
 
     public static LineInfo horizontalRule(String raw, String trimmed, int indent) {
-
         return simple(raw, trimmed, indent, LineKind.HORIZONTAL_RULE);
     }
 
     public static LineInfo tableSeparator(String raw, String trimmed, int indent) {
-
         return simple(raw, trimmed, indent, LineKind.TABLE_SEPARATOR);
     }
 
     public static LineInfo tableRow(String raw, String trimmed, int indent) {
-
         return simple(raw, trimmed, indent, LineKind.TABLE_ROW);
     }
 
-    public static LineInfo heading(String raw, String trimmed, int indent, int headingLevel, String headingText,
-            boolean endsWithHardBreak) {
+    public static LineInfo heading(String raw, String trimmed, int indent, int headingLevel, String headingText, boolean endsWithHardBreak) {
 
-        return new LineInfo(raw, trimmed, indent, raw, trimmed, indent, 0, LineKind.HEADING, headingLevel, headingText,
-                endsWithHardBreak, null, null, null);
+        return unquoted(raw, trimmed, indent, LineKind.HEADING, new HeadingDetail(headingLevel, headingText, endsWithHardBreak));
     }
 
-    public static LineInfo bulletItem(String raw, String trimmed, int indent, String markerText, String contentText,
-            boolean endsWithHardBreak) {
+    public static LineInfo bulletItem(String raw, String trimmed, int indent, String markerText, String contentText, boolean endsWithHardBreak) {
 
         return listItem(raw, trimmed, indent, LineKind.BULLET_ITEM, markerText, contentText, endsWithHardBreak);
     }
 
-    public static LineInfo numberItem(String raw, String trimmed, int indent, String markerText, String contentText,
-            boolean endsWithHardBreak) {
+    public static LineInfo numberItem(String raw, String trimmed, int indent, String markerText, String contentText, boolean endsWithHardBreak) {
 
         return listItem(raw, trimmed, indent, LineKind.NUMBER_ITEM, markerText, contentText, endsWithHardBreak);
     }
 
-    public static LineInfo normal(String raw, String trimmed, int indent, String paragraphText,
-            boolean endsWithHardBreak) {
+    public static LineInfo normal(String raw, String trimmed, int indent, String paragraphText, boolean endsWithHardBreak) {
 
-        return new LineInfo(raw, trimmed, indent, raw, trimmed, indent, 0, LineKind.NORMAL, -1, null, endsWithHardBreak,
-                paragraphText, null, null);
+        return unquoted(raw, trimmed, indent, LineKind.NORMAL, new ParagraphDetail(paragraphText, endsWithHardBreak));
     }
 
     /**
      * 引用マーカー除去後に解析したLineInfoを、 明示的な引用情報付きLineInfoへ変換する。
      *
-     * content自体は保持せず、値だけをコピーするため、 再帰的なLineInfo構造にはならない。
+     * 不変の詳細データを共有するが、content自体は保持しない。
      */
     public static LineInfo quoted(String raw, String trimmed, int indent, int quoteDepth, LineInfo content) {
 
@@ -136,22 +115,57 @@ public final class LineInfo {
             throw new IllegalArgumentException("content must already be unwrapped");
         }
 
-        return new LineInfo(raw, trimmed, indent, content.getContentRaw(), content.getContentTrimmed(),
-                content.getContentIndent(), quoteDepth, content.getKind(), content.getHeadingLevel(),
-                content.getHeadingText(), content.endsWithHardBreak(), content.getParagraphText(),
-                content.getListMarkerText(), content.getListContentText());
+        return new LineInfo(raw, trimmed, indent, content.contentRaw, content.contentTrimmed, content.contentIndent, quoteDepth, content.kind, content.detail);
     }
 
     private static LineInfo simple(String raw, String trimmed, int indent, LineKind kind) {
 
-        return new LineInfo(raw, trimmed, indent, raw, trimmed, indent, 0, kind, -1, null, false, null, null, null);
+        return unquoted(raw, trimmed, indent, kind, null);
     }
 
-    private static LineInfo listItem(String raw, String trimmed, int indent, LineKind kind, String markerText,
-            String contentText, boolean endsWithHardBreak) {
+    private static LineInfo listItem(String raw, String trimmed, int indent, LineKind kind, String markerText, String contentText, boolean endsWithHardBreak) {
 
-        return new LineInfo(raw, trimmed, indent, raw, trimmed, indent, 0, kind, -1, null, endsWithHardBreak,
-                contentText, markerText, contentText);
+        return unquoted(raw, trimmed, indent, kind, new ListDetail(markerText, contentText, endsWithHardBreak));
+    }
+
+    private static LineInfo unquoted(String raw, String trimmed, int indent, LineKind kind, Detail detail) {
+
+        return new LineInfo(raw, trimmed, indent, raw, trimmed, indent, 0, kind, detail);
+    }
+
+    private static void validateDetail(LineKind kind, Detail detail) {
+        boolean valid;
+
+        switch (kind) {
+        case HEADING:
+            valid = detail instanceof HeadingDetail;
+            break;
+
+        case NORMAL:
+            valid = detail instanceof ParagraphDetail;
+            break;
+
+        case BULLET_ITEM:
+        case NUMBER_ITEM:
+            valid = detail instanceof ListDetail;
+            break;
+
+        case CODE_FENCE:
+        case CODE_LINE:
+        case BLANK:
+        case HORIZONTAL_RULE:
+        case TABLE_SEPARATOR:
+        case TABLE_ROW:
+            valid = detail == null;
+            break;
+
+        default:
+            throw new AssertionError("Unhandled LineKind: " + kind);
+        }
+
+        if (!valid) {
+            throw new IllegalArgumentException("Detail does not match LineKind: " + kind);
+        }
     }
 
     public String getRaw() {
@@ -203,30 +217,82 @@ public final class LineInfo {
     }
 
     public int getHeadingLevel() {
-        return headingLevel;
+        return detail instanceof HeadingDetail ? ((HeadingDetail)detail).level : -1;
     }
 
     public String getHeadingText() {
-        return headingText;
+        return detail instanceof HeadingDetail ? ((HeadingDetail)detail).text : null;
     }
 
     public boolean endsWithHardBreak() {
-        return endsWithHardBreak;
+        return detail != null && detail.endsWithHardBreak;
     }
 
     public String getParagraphText() {
-        return paragraphText;
+        if (detail instanceof ParagraphDetail) {
+            return ((ParagraphDetail)detail).text;
+        }
+
+        if (detail instanceof ListDetail) {
+            return ((ListDetail)detail).contentText;
+        }
+
+        return null;
     }
 
     public String getListMarkerText() {
-        return listMarkerText;
+        return detail instanceof ListDetail ? ((ListDetail)detail).markerText : null;
     }
 
     public String getListContentText() {
-        return listContentText;
+        return detail instanceof ListDetail ? ((ListDetail)detail).contentText : null;
     }
 
     public boolean isTableLike() {
         return kind == LineKind.TABLE_SEPARATOR || kind == LineKind.TABLE_ROW;
+    }
+
+    private abstract static class Detail {
+
+        final boolean endsWithHardBreak;
+
+        Detail(boolean endsWithHardBreak) {
+            this.endsWithHardBreak = endsWithHardBreak;
+        }
+    }
+
+    private static final class HeadingDetail extends Detail {
+
+        final int level;
+        final String text;
+
+        HeadingDetail(int level, String text, boolean endsWithHardBreak) {
+            super(endsWithHardBreak);
+            this.level = level;
+            this.text = text;
+        }
+    }
+
+    private static final class ParagraphDetail extends Detail {
+
+        final String text;
+
+        ParagraphDetail(String text, boolean endsWithHardBreak) {
+            super(endsWithHardBreak);
+            this.text = text;
+        }
+    }
+
+    private static final class ListDetail extends Detail {
+
+        final String markerText;
+        final String contentText;
+
+        ListDetail(String markerText, String contentText, boolean endsWithHardBreak) {
+
+            super(endsWithHardBreak);
+            this.markerText = markerText;
+            this.contentText = contentText;
+        }
     }
 }

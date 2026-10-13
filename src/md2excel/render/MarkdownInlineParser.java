@@ -1,0 +1,672 @@
+package md2excel.render;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import md2excel.markdown.MdCharUtil;
+import md2excel.markdown.MdInlineCodeUtil;
+import md2excel.markdown.MdTextUtil;
+
+/**
+ * Markdownのインライン構文を、POIに依存しない区間と表示行へ解析する。
+ */
+final class MarkdownInlineParser {
+
+    private static final char SOFT_BREAK_TOKEN = ParagraphBreakTokens.SOFT_BREAK_TOKEN;
+    private static final char HARD_BREAK_TOKEN = ParagraphBreakTokens.HARD_BREAK_TOKEN;
+
+    private MarkdownInlineParser() {
+    }
+
+    private static final class InlineToken {
+        final InlineTokenType type;
+        final String text; // TEXT/CODEのみ
+        final char marker; // DELIMのみ
+        final int originalLen; // DELIMのみ
+        final boolean canOpen; // DELIMのみ
+        final boolean canClose; // DELIMのみ
+
+        int usedOpenChars;
+        int usedCloseChars;
+
+        final List<DelimUse> uses = new ArrayList<DelimUse>();
+
+        private InlineToken(InlineTokenType type, String text, char marker, int originalLen, boolean canOpen, boolean canClose) {
+            this.type = type;
+            this.text = text;
+            this.marker = marker;
+            this.originalLen = originalLen;
+            this.canOpen = canOpen;
+            this.canClose = canClose;
+        }
+
+        static InlineToken text(String text) {
+            return new InlineToken(InlineTokenType.TEXT, text, '\0', 0, false, false);
+        }
+
+        static InlineToken code(String normalizedText) {
+            return new InlineToken(InlineTokenType.CODE, normalizedText, '\0', 0, false, false);
+        }
+
+        static InlineToken delim(char marker, int len, boolean canOpen, boolean canClose) {
+            return new InlineToken(InlineTokenType.DELIM, null, marker, len, canOpen, canClose);
+        }
+
+        boolean isEmphasisDelimiter(char ch) {
+            return type == InlineTokenType.DELIM && marker == ch;
+        }
+
+        int remainingChars() {
+            return originalLen - usedOpenChars - usedCloseChars;
+        }
+
+        int availableForOpen() {
+            return remainingChars();
+        }
+
+        int availableForClose() {
+            return remainingChars();
+        }
+
+        void consumeAsOpen(int len) {
+            int start = originalLen - usedOpenChars - len;
+            uses.add(new DelimUse(start, len, (len == 2) ? DelimUseKind.OPEN_STRONG : DelimUseKind.OPEN_EM));
+            usedOpenChars += len;
+        }
+
+        void consumeAsClose(int len) {
+            int start = usedCloseChars;
+            uses.add(new DelimUse(start, len, (len == 2) ? DelimUseKind.CLOSE_STRONG : DelimUseKind.CLOSE_EM));
+            usedCloseChars += len;
+        }
+
+        void sortUses() {
+            Collections.sort(uses, new java.util.Comparator<DelimUse>() {
+                @Override
+                public int compare(DelimUse a, DelimUse b) {
+                    return Integer.compare(a.start, b.start);
+                }
+            });
+        }
+    }
+
+    private enum InlineTokenType {
+        TEXT, CODE, DELIM
+    }
+
+    private enum DelimUseKind {
+        OPEN_EM, CLOSE_EM, OPEN_STRONG, CLOSE_STRONG
+    }
+
+    private static final class DelimUse {
+        final int start;
+        final int len;
+        final DelimUseKind kind;
+
+        DelimUse(int start, int len, DelimUseKind kind) {
+            this.start = start;
+            this.len = len;
+            this.kind = kind;
+        }
+    }
+
+    private static final class InlineTokenizer {
+
+        private InlineTokenizer() {
+        }
+
+        private static final class DelimiterRunInfo {
+            final boolean canOpen;
+            final boolean canClose;
+
+            DelimiterRunInfo(boolean canOpen, boolean canClose) {
+                this.canOpen = canOpen;
+                this.canClose = canClose;
+            }
+        }
+
+        private static List<InlineToken> tokenizeInline(String markdownText) {
+            List<InlineToken> tokens = new ArrayList<InlineToken>();
+            if (markdownText == null || markdownText.isEmpty()) {
+                return tokens;
+            }
+
+            StringBuilder textBuf = new StringBuilder();
+
+            for (int i = 0; i < markdownText.length();) {
+                char ch = markdownText.charAt(i);
+
+                // バックスラッシュエスケープ（インラインコード外）
+                // 例: \* -> *, \_ -> _, \` -> `
+                if (ch == '\\') {
+                    if (i + 1 < markdownText.length()) {
+                        char next = markdownText.charAt(i + 1);
+                        if (isBackslashEscapable(next)) {
+                            textBuf.append(next);
+                            i += 2;
+                            continue;
+                        }
+                    }
+
+                    // エスケープ対象でない場合は '\' 自体を文字として残す
+                    textBuf.append(ch);
+                    i++;
+                    continue;
+                }
+
+                // `code`（複数バッククォート含む）
+                if (ch == '`') {
+                    int tickLen = MdInlineCodeUtil.countBackticks(markdownText, i);
+
+                    int close = MdInlineCodeUtil.findClosingBackticks(markdownText, i + tickLen, tickLen);
+                    if (close >= 0) {
+                        flushTextToken(tokens, textBuf);
+
+                        String code = markdownText.substring(i + tickLen, close);
+                        code = normalizeCodeSpanContent(code);
+
+                        tokens.add(InlineToken.code(code));
+
+                        i = close + tickLen;
+                        continue;
+                    }
+
+                    textBuf.append(markdownText, i, i + tickLen);
+                    i += tickLen;
+                    continue;
+                }
+
+                // * / _ delimiter run
+                if (ch == '*' || ch == '_') {
+                    int runLen = countRun(markdownText, i, ch);
+                    DelimiterRunInfo info = analyzeDelimiterRun(markdownText, i, runLen, ch);
+
+                    if (info.canOpen || info.canClose) {
+                        flushTextToken(tokens, textBuf);
+                        tokens.add(InlineToken.delim(ch, runLen, info.canOpen, info.canClose));
+                    } else {
+                        appendRepeated(textBuf, ch, runLen);
+                    }
+
+                    i += runLen;
+                    continue;
+                }
+
+                // ~~ は CommonMark core では非対応なので、そのまま文字列として流す
+                textBuf.append(ch);
+                i++;
+            }
+
+            flushTextToken(tokens, textBuf);
+            return tokens;
+        }
+
+        private static boolean isBackslashEscapable(char ch) {
+            return MdCharUtil.isAsciiPunctuation(ch);
+        }
+
+        private static void flushTextToken(List<InlineToken> tokens, StringBuilder textBuf) {
+            if (textBuf.length() == 0) {
+                return;
+            }
+            tokens.add(InlineToken.text(textBuf.toString()));
+            textBuf.setLength(0);
+        }
+
+        private static int countRun(String text, int pos, char ch) {
+            int len = 0;
+            while (pos + len < text.length() && text.charAt(pos + len) == ch) {
+                len++;
+            }
+            return len;
+        }
+
+        private static DelimiterRunInfo analyzeDelimiterRun(String text, int pos, int runLen, char markerChar) {
+            char before = (pos > 0) ? text.charAt(pos - 1) : '\0';
+            char after = (pos + runLen < text.length()) ? text.charAt(pos + runLen) : '\0';
+
+            boolean beforeWhitespace = (pos == 0) || isUnicodeWhitespace(before);
+            boolean afterWhitespace = (pos + runLen >= text.length()) || isUnicodeWhitespace(after);
+
+            boolean beforePunctuation = (pos > 0) && isPunctuationChar(before);
+            boolean afterPunctuation = (pos + runLen < text.length()) && isPunctuationChar(after);
+
+            boolean leftFlanking = !afterWhitespace && (!afterPunctuation || beforeWhitespace || beforePunctuation);
+
+            boolean rightFlanking = !beforeWhitespace && (!beforePunctuation || afterWhitespace || afterPunctuation);
+
+            boolean canOpen;
+            boolean canClose;
+
+            if (markerChar == '*') {
+                canOpen = leftFlanking;
+                canClose = rightFlanking;
+            } else {
+                // '_'
+                canOpen = leftFlanking && (!rightFlanking || beforePunctuation);
+                canClose = rightFlanking && (!leftFlanking || afterPunctuation);
+            }
+
+            return new DelimiterRunInfo(canOpen, canClose);
+        }
+
+        private static boolean isUnicodeWhitespace(char ch) {
+            return ch == SOFT_BREAK_TOKEN || ch == HARD_BREAK_TOKEN || Character.isWhitespace(ch) || Character.isSpaceChar(ch);
+        }
+
+        private static boolean isPunctuationChar(char ch) {
+            if (MdCharUtil.isAsciiPunctuation(ch)) {
+                return true;
+            }
+
+            int type = Character.getType(ch);
+
+            return type == Character.CONNECTOR_PUNCTUATION || type == Character.DASH_PUNCTUATION || type == Character.START_PUNCTUATION
+                || type == Character.END_PUNCTUATION || type == Character.INITIAL_QUOTE_PUNCTUATION || type == Character.FINAL_QUOTE_PUNCTUATION
+                || type == Character.OTHER_PUNCTUATION;
+        }
+
+        private static String normalizeCodeSpanContent(String code) {
+            if (code == null || code.isEmpty()) {
+                return code;
+            }
+
+            // paragraph 改行トークンは code span 内では空白に寄せる
+            code = DisplayLineSplitter.normalizeParagraphBreakTokensInCode(code);
+
+            int start = 0;
+            int end = code.length();
+            boolean leadingSpace = start < end && Character.isWhitespace(code.charAt(start));
+            boolean trailingSpace = end > start && Character.isWhitespace(code.charAt(end - 1));
+            if (leadingSpace && trailingSpace) {
+                int i = start;
+                while (i < end && Character.isWhitespace(code.charAt(i))) {
+                    i++;
+                }
+                if (i < end) {
+                    start++;
+                    end--;
+                }
+            }
+            return code.substring(start, end);
+        }
+    }
+
+    private static final class EmphasisResolver {
+
+        private EmphasisResolver() {
+        }
+
+        private static void resolveEmphasis(List<InlineToken> tokens, char marker) {
+            List<Integer> openerStack = new ArrayList<Integer>();
+
+            for (int i = 0; i < tokens.size(); i++) {
+                InlineToken closer = tokens.get(i);
+                if (!closer.isEmphasisDelimiter(marker)) {
+                    continue;
+                }
+
+                if (closer.canClose) {
+                    while (closer.availableForClose() > 0) {
+                        int openerStackPos = findMatchingEmphasisOpener(tokens, openerStack, closer, marker);
+                        if (openerStackPos < 0) {
+                            break;
+                        }
+
+                        InlineToken opener = tokens.get(openerStack.get(openerStackPos));
+                        int useLen = (opener.availableForOpen() >= 2 && closer.availableForClose() >= 2) ? 2 : 1;
+
+                        opener.consumeAsOpen(useLen);
+                        closer.consumeAsClose(useLen);
+
+                        if (opener.availableForOpen() == 0) {
+                            openerStack.remove(openerStackPos);
+                        }
+                    }
+                }
+
+                if (closer.canOpen && closer.availableForOpen() > 0) {
+                    openerStack.add(i);
+                }
+            }
+        }
+
+        private static int findMatchingEmphasisOpener(List<InlineToken> tokens, List<Integer> openerStack, InlineToken closer, char marker) {
+
+            for (int i = openerStack.size() - 1; i >= 0; i--) {
+                InlineToken opener = tokens.get(openerStack.get(i));
+
+                if (!opener.isEmphasisDelimiter(marker) || opener.availableForOpen() <= 0) {
+                    openerStack.remove(i);
+                    continue;
+                }
+
+                if (violatesRuleOfThree(opener, closer)) {
+                    continue;
+                }
+
+                return i;
+            }
+
+            return -1;
+        }
+
+        /**
+         * CommonMark の rule of 3: 片方でも「開けて閉じられる」delimiter run のとき、 opener/closer の元の run 長の合計が 3 の倍数で、 かつ両方とも 3 の倍数ではない場合はマッチ禁止。
+         */
+        private static boolean violatesRuleOfThree(InlineToken opener, InlineToken closer) {
+            boolean oneCanBoth = (opener.canOpen && opener.canClose) || (closer.canOpen && closer.canClose);
+            if (!oneCanBoth) {
+                return false;
+            }
+
+            int sum = opener.originalLen + closer.originalLen;
+            if ((sum % 3) != 0) {
+                return false;
+            }
+
+            boolean bothMultipleOf3 = (opener.originalLen % 3 == 0) && (closer.originalLen % 3 == 0);
+            return !bothMultipleOf3;
+        }
+    }
+
+    private static final class DisplayLineSplitter {
+
+        private DisplayLineSplitter() {
+        }
+
+        private static final class EmphasisState {
+            int boldDepth;
+            int italicDepth;
+
+            EmphasisState(int boldDepth, int italicDepth) {
+                this.boldDepth = boldDepth;
+                this.italicDepth = italicDepth;
+            }
+        }
+
+        private static List<MdSegment> buildSegments(List<InlineToken> tokens) {
+            List<MdSegment> out = new ArrayList<MdSegment>();
+
+            EmphasisState state = new EmphasisState(0, 0);
+
+            for (InlineToken token : tokens) {
+                if (token.type == InlineTokenType.TEXT) {
+                    addMergedSegment(out, token.text, state.boldDepth > 0, state.italicDepth > 0, false);
+                    continue;
+                }
+
+                if (token.type == InlineTokenType.CODE) {
+                    addMergedSegment(out, token.text, state.boldDepth > 0, state.italicDepth > 0, true);
+                    continue;
+                }
+
+                token.sortUses();
+
+                int pos = 0;
+                for (DelimUse use : token.uses) {
+                    if (use.start > pos) {
+                        consumeUnmatchedDelimiterRun(out, token, use.start - pos, state);
+                    }
+
+                    switch (use.kind) {
+                    case CLOSE_EM:
+                        if (state.italicDepth > 0) {
+                            state.italicDepth--;
+                        }
+                        break;
+                    case CLOSE_STRONG:
+                        if (state.boldDepth > 0) {
+                            state.boldDepth--;
+                        }
+                        break;
+                    case OPEN_EM:
+                        state.italicDepth++;
+                        break;
+                    case OPEN_STRONG:
+                        state.boldDepth++;
+                        break;
+                    default:
+                        break;
+                    }
+
+                    pos = use.start + use.len;
+                }
+
+                if (pos < token.originalLen) {
+                    consumeUnmatchedDelimiterRun(out, token, token.originalLen - pos, state);
+                }
+            }
+
+            return out;
+        }
+
+        private static void consumeUnmatchedDelimiterRun(List<MdSegment> out, InlineToken token, int len, EmphasisState state) {
+
+            if (len <= 0) {
+                return;
+            }
+
+            int remaining = len;
+
+            // まず既存の open 状態を閉じられる分だけ閉じる
+            if (token.canClose) {
+                while (remaining >= 2 && state.boldDepth > 0) {
+                    state.boldDepth--;
+                    remaining -= 2;
+                }
+                while (remaining >= 1 && state.italicDepth > 0) {
+                    state.italicDepth--;
+                    remaining--;
+                }
+            }
+
+            // 未解決 delimiter は文字として残す
+            if (remaining > 0) {
+                addMergedSegment(out, repeatChar(token.marker, remaining), state.boldDepth > 0, state.italicDepth > 0, false);
+            }
+        }
+
+        private static void addMergedSegment(List<MdSegment> out, String text, boolean inBold, boolean inItalic, boolean inCode) {
+            if (text == null || text.isEmpty()) {
+                return;
+            }
+
+            if (!out.isEmpty()) {
+                MdSegment last = out.get(out.size() - 1);
+                if (last.inBold == inBold && last.inItalic == inItalic && last.inCode == inCode) {
+                    out.set(out.size() - 1, new MdSegment(last.text + text, inBold, inItalic, inCode));
+                    return;
+                }
+            }
+
+            out.add(new MdSegment(text, inBold, inItalic, inCode));
+        }
+
+        private static List<List<MdSegment>> splitParagraphSegments(List<MdSegment> segments) {
+            List<List<MdSegment>> out = new ArrayList<List<MdSegment>>();
+            List<MdSegment> current = new ArrayList<MdSegment>();
+
+            if (segments == null || segments.isEmpty()) {
+                return out;
+            }
+
+            boolean sawAny = false;
+            boolean lastEndedWithHardBreak = false;
+
+            for (MdSegment seg : segments) {
+                if (seg == null || seg.text == null || seg.text.isEmpty()) {
+                    continue;
+                }
+
+                sawAny = true;
+
+                // code span 内の paragraph break token は「表示改行」ではなく空白にする
+                if (seg.inCode) {
+                    String codeText = normalizeParagraphBreakTokensInCode(seg.text);
+                    addMergedSegment(current, codeText, seg.inBold, seg.inItalic, true);
+                    lastEndedWithHardBreak = false;
+                    continue;
+                }
+
+                String text = seg.text;
+                int start = 0;
+
+                for (int i = 0; i < text.length(); i++) {
+                    char ch = text.charAt(i);
+                    if (!isParagraphBreakToken(ch)) {
+                        continue;
+                    }
+
+                    if (i > start) {
+                        addMergedSegment(current, text.substring(start, i), seg.inBold, seg.inItalic, false);
+                    }
+
+                    if (ch == SOFT_BREAK_TOKEN) {
+                        // soft break は 1 個の空白として扱う
+                        addMergedSegment(current, " ", seg.inBold, seg.inItalic, false);
+                        lastEndedWithHardBreak = false;
+                    } else {
+                        // hard break は表示行を分ける
+                        out.add(new ArrayList<MdSegment>(current));
+                        current.clear();
+                        lastEndedWithHardBreak = true;
+                    }
+
+                    start = i + 1;
+                }
+
+                if (start < text.length()) {
+                    addMergedSegment(current, text.substring(start), seg.inBold, seg.inItalic, false);
+                    lastEndedWithHardBreak = false;
+                }
+            }
+
+            // 通常の最終行
+            if (!current.isEmpty()) {
+                out.add(new ArrayList<MdSegment>(current));
+            } else if (sawAny && lastEndedWithHardBreak) {
+                // 明示 <br> で終わった場合など、末尾空行も 1 行として保持
+                out.add(new ArrayList<MdSegment>());
+            }
+
+            return out;
+        }
+
+        private static List<MdSegment> joinDisplayLinesWithSingleSpace(List<List<MdSegment>> lines) {
+            List<MdSegment> out = new ArrayList<MdSegment>();
+            if (lines == null || lines.isEmpty()) {
+                return out;
+            }
+
+            boolean hasPreviousNonEmptyLine = false;
+
+            for (int i = 0; i < lines.size(); i++) {
+                List<MdSegment> line = lines.get(i);
+                if (isEmptySegmentLine(line)) {
+                    continue;
+                }
+
+                if (hasPreviousNonEmptyLine) {
+                    addMergedSegment(out, " ", false, false, false);
+                }
+
+                for (int j = 0; j < line.size(); j++) {
+                    MdSegment seg = line.get(j);
+                    addMergedSegment(out, seg.text, seg.inBold, seg.inItalic, seg.inCode);
+                }
+
+                hasPreviousNonEmptyLine = true;
+            }
+
+            return out;
+        }
+
+        private static boolean isEmptySegmentLine(List<MdSegment> line) {
+            if (line == null || line.isEmpty()) {
+                return true;
+            }
+
+            for (int i = 0; i < line.size(); i++) {
+                MdSegment seg = line.get(i);
+                if (seg != null && seg.text != null && !seg.text.isEmpty()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static String normalizeParagraphText(String s) {
+            if (s == null || s.isEmpty()) {
+                return "";
+            }
+
+            // 明示 <br> は paragraph hard break token に置換
+            return MdTextUtil.replaceBrOutsideInlineCode(s, String.valueOf(HARD_BREAK_TOKEN));
+        }
+
+        private static String normalizeParagraphBreakTokensInCode(String s) {
+            if (s == null || s.isEmpty()) {
+                return s;
+            }
+
+            StringBuilder out = new StringBuilder(s.length());
+            for (int i = 0; i < s.length(); i++) {
+                char ch = s.charAt(i);
+                if (ch == SOFT_BREAK_TOKEN || ch == HARD_BREAK_TOKEN) {
+                    out.append(' ');
+                } else {
+                    out.append(ch);
+                }
+            }
+            return out.toString();
+        }
+
+        private static boolean isParagraphBreakToken(char ch) {
+            return ch == SOFT_BREAK_TOKEN || ch == HARD_BREAK_TOKEN;
+        }
+    }
+
+    // package-private: ParagraphUtil から呼ぶ
+    static List<List<MdSegment>> parseParagraphToDisplayLines(String paragraphText) {
+
+        if (paragraphText == null) {
+            paragraphText = "";
+        }
+
+        String normalized = DisplayLineSplitter.normalizeParagraphText(paragraphText);
+
+        return DisplayLineSplitter.splitParagraphSegments(parseMarkdown(normalized));
+    }
+
+    // package-private: render パッケージ内から使用
+    static List<MdSegment> parseParagraphToSingleLineSegments(String paragraphText) {
+
+        return DisplayLineSplitter.joinDisplayLinesWithSingleSpace(parseParagraphToDisplayLines(paragraphText));
+    }
+
+    private static List<MdSegment> parseMarkdown(String markdownText) {
+        List<InlineToken> tokens = InlineTokenizer.tokenizeInline(markdownText);
+
+        EmphasisResolver.resolveEmphasis(tokens, '*');
+        EmphasisResolver.resolveEmphasis(tokens, '_');
+
+        return DisplayLineSplitter.buildSegments(tokens);
+    }
+
+    private static void appendRepeated(StringBuilder sb, char ch, int count) {
+        for (int i = 0; i < count; i++) {
+            sb.append(ch);
+        }
+    }
+
+    private static String repeatChar(char ch, int count) {
+        if (count <= 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(count);
+        appendRepeated(sb, ch, count);
+        return sb.toString();
+    }
+}

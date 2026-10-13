@@ -8,25 +8,23 @@ import org.apache.poi.ss.usermodel.Sheet;
 import md2excel.excel.ExcelCellUtil;
 import md2excel.excel.MdStyleCatalog;
 
-public final class BlockQuoteUtil {
+final class BlockQuoteUtil {
     private BlockQuoteUtil() {
     }
 
-    public static void closeBlockQuoteIfOpen(Sheet sheet, MdStyleCatalog styles, RenderState st) {
+    static void closeBlockQuoteIfOpen(Sheet sheet, MdStyleCatalog styles, RenderState st) {
 
         if (!st.hasRenderableBlockQuote()) {
             st.clearBlockQuoteTracking();
             return;
         }
 
-        applyBlockQuoteStyle(sheet, styles, st, st.getBlockQuoteFirstRow(), st.getBlockQuoteLastRow(),
-                st.getBlockQuoteStartCol(), st.getRenderLastColIndex());
+        applyBlockQuoteStyle(sheet, styles, st, st.getBlockQuoteFirstRow(), st.getBlockQuoteLastRow(), st.getBlockQuoteStartCol(), st.getRenderLastColIndex());
 
         st.clearBlockQuoteTracking();
     }
 
-    private static void applyBlockQuoteStyle(Sheet sheet, MdStyleCatalog styles, RenderState st, int firstRow,
-            int lastRow, int startCol, int lastColIndex) {
+    private static void applyBlockQuoteStyle(Sheet sheet, MdStyleCatalog styles, RenderState st, int firstRow, int lastRow, int startCol, int lastColIndex) {
 
         int fillEndCol = Math.max(startCol, lastColIndex);
 
@@ -37,10 +35,9 @@ public final class BlockQuoteUtil {
                 continue;
             }
 
-            RenderState.QuoteRowInfo quoteRowInfo = st.getBlockQuoteRowInfo(r);
+            QuoteRowInfo quoteRowInfo = st.getBlockQuoteRowInfo(r);
 
-            RenderState.QuoteRowKind quoteRowKind = quoteRowInfo == null ? RenderState.QuoteRowKind.NORMAL
-                    : quoteRowInfo.getKind();
+            QuoteRowKind quoteRowKind = quoteRowInfo == null ? QuoteRowKind.NORMAL : quoteRowInfo.getKind();
 
             int quoteDepth = quoteRowInfo == null ? 1 : quoteRowInfo.getDepth();
 
@@ -52,9 +49,8 @@ public final class BlockQuoteUtil {
         }
     }
 
-    private static void applyBlockQuoteCellStyle(Cell cell, MdStyleCatalog styles,
-            RenderState.QuoteRowInfo quoteRowInfo, RenderState.QuoteRowKind quoteRowKind, int quoteDepth, int startCol,
-            int col) {
+    private static void applyBlockQuoteCellStyle(Cell cell, MdStyleCatalog styles, QuoteRowInfo quoteRowInfo, QuoteRowKind quoteRowKind,
+        int quoteDepth, int startCol, int col) {
 
         // startColは最も左側の引用装飾列。
         // 引用深度分の列を引用罫線列として扱う。
@@ -63,7 +59,7 @@ public final class BlockQuoteUtil {
         // ----------------------------------------
         // code
         // ----------------------------------------
-        if (quoteRowKind == RenderState.QuoteRowKind.CODE) {
+        if (quoteRowKind == QuoteRowKind.CODE) {
             if (isQuoteDecorCol) {
                 cell.setCellStyle(styles.blockQuoteLeftStyle);
             }
@@ -75,7 +71,7 @@ public final class BlockQuoteUtil {
         // ----------------------------------------
         // horizontal rule
         // ----------------------------------------
-        if (quoteRowKind == RenderState.QuoteRowKind.HORIZONTAL_RULE) {
+        if (quoteRowKind == QuoteRowKind.HORIZONTAL_RULE) {
 
             if (isQuoteDecorCol) {
                 cell.setCellStyle(styles.blockQuoteBlankLeftStyle);
@@ -89,7 +85,7 @@ public final class BlockQuoteUtil {
         // ----------------------------------------
         // table
         // ----------------------------------------
-        if (quoteRowKind == RenderState.QuoteRowKind.TABLE) {
+        if (quoteRowKind == QuoteRowKind.TABLE) {
             if (isQuoteDecorCol) {
                 cell.setCellStyle(styles.blockQuoteLeftStyle);
 
@@ -108,7 +104,7 @@ public final class BlockQuoteUtil {
         // ----------------------------------------
         // blank
         // ----------------------------------------
-        if (quoteRowKind == RenderState.QuoteRowKind.BLANK) {
+        if (quoteRowKind == QuoteRowKind.BLANK) {
             cell.setCellStyle(isQuoteDecorCol ? styles.blockQuoteBlankLeftStyle : styles.blockQuoteBlankBodyStyle);
 
             return;
@@ -124,8 +120,7 @@ public final class BlockQuoteUtil {
         }
     }
 
-    private static CellStyle resolveBlockQuoteContentStyle(RenderState.QuoteRowInfo quoteRowInfo, int col,
-            MdStyleCatalog styles) {
+    private static CellStyle resolveBlockQuoteContentStyle(QuoteRowInfo quoteRowInfo, int col, MdStyleCatalog styles) {
 
         if (quoteRowInfo == null || col != quoteRowInfo.getContentCol()) {
             return styles.blockQuoteBodyStyle;
@@ -149,7 +144,7 @@ public final class BlockQuoteUtil {
         }
     }
 
-    private static CellStyle resolveQuoteTableStyle(MarkdownTable.TableRowStyleRole role, MdStyleCatalog styles) {
+    private static CellStyle resolveQuoteTableStyle(TableRowStyleRole role, MdStyleCatalog styles) {
 
         if (role == null) {
             return styles.blockQuoteBodyStyle;

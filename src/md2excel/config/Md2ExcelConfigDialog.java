@@ -9,12 +9,10 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
-import java.lang.reflect.InvocationTargetException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.ParseException;
-import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -30,12 +28,13 @@ import javax.swing.JSpinner;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SpinnerNumberModel;
-import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
 import org.apache.poi.ss.usermodel.VerticalAlignment;
+
+import md2excel.swing.SwingEdt;
 
 public final class Md2ExcelConfigDialog {
 
@@ -47,13 +46,10 @@ public final class Md2ExcelConfigDialog {
     private static final int DEFAULT_NORMAL_FONT_SIZE = 11;
     private static final int DEFAULT_TOTAL_COLUMN_COUNT = 40;
 
-    private static final String[] FONT_CANDIDATES = { "游ゴシック", "Yu Gothic UI", "ＭＳ Ｐゴシック", "ＭＳ ゴシック", "Meiryo",
-            "Meiryo UI" };
+    private static final String[] FONT_CANDIDATES = { "游ゴシック", "Yu Gothic UI", "ＭＳ Ｐゴシック", "ＭＳ ゴシック", "Meiryo", "Meiryo UI" };
 
-    private static final VerticalAlignmentOption[] ALIGNMENT_OPTIONS = {
-            new VerticalAlignmentOption("上揃え", VerticalAlignment.TOP),
-            new VerticalAlignmentOption("上下中央揃え", VerticalAlignment.CENTER),
-            new VerticalAlignmentOption("下揃え", VerticalAlignment.BOTTOM) };
+    private static final VerticalAlignmentOption[] ALIGNMENT_OPTIONS = { new VerticalAlignmentOption("上揃え", VerticalAlignment.TOP),
+            new VerticalAlignmentOption("上下中央揃え", VerticalAlignment.CENTER), new VerticalAlignmentOption("下揃え", VerticalAlignment.BOTTOM) };
 
     private static final VerticalAlignmentOption DEFAULT_ALIGNMENT_OPTION = ALIGNMENT_OPTIONS[2];
 
@@ -66,46 +62,7 @@ public final class Md2ExcelConfigDialog {
      * @return 入力された設定。キャンセル時はnull
      */
     public static Md2ExcelConfig load() {
-        if (SwingUtilities.isEventDispatchThread()) {
-            return new ConfigForm().showDialog();
-        }
-
-        final AtomicReference<Md2ExcelConfig> result = new AtomicReference<Md2ExcelConfig>();
-
-        try {
-            SwingUtilities.invokeAndWait(new Runnable() {
-                @Override
-                public void run() {
-                    result.set(new ConfigForm().showDialog());
-                }
-            });
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-
-            throw new IllegalStateException("Configuration dialog was interrupted", e);
-
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-
-            if (cause instanceof RuntimeException) {
-                throw (RuntimeException) cause;
-            }
-
-            if (cause instanceof Error) {
-                throw (Error) cause;
-            }
-
-            throw new IllegalStateException("Failed to show configuration dialog", cause);
-        }
-
-        return result.get();
-    }
-
-    /**
-     * 入力パスと同じディレクトリに、 拡張子だけを変更した出力パスを作る。
-     */
-    static Path replaceExtension(Path path, String newExtension) {
-        return Md2ExcelConfigInput.replaceExtension(path, newExtension);
+        return SwingEdt.call(() -> new ConfigForm().showDialog(), "Configuration dialog was interrupted", "Failed to show configuration dialog");
     }
 
     private static final class ConfigForm {
@@ -116,25 +73,20 @@ public final class Md2ExcelConfigDialog {
 
         private final JButton browseButton = new JButton("参照...");
 
-        private final JSpinner totalColumnCountSpinner = createIntegerSpinner(DEFAULT_TOTAL_COLUMN_COUNT,
-                MdSheetSettings.MIN_TOTAL_COLUMN_COUNT, MdSheetSettings.MAX_TOTAL_COLUMN_COUNT);
+        private final JSpinner totalColumnCountSpinner = createIntegerSpinner(DEFAULT_TOTAL_COLUMN_COUNT, MdSheetSettings.MIN_TOTAL_COLUMN_COUNT,
+            MdSheetSettings.MAX_TOTAL_COLUMN_COUNT);
 
         private final JComboBox<String> fontComboBox = new JComboBox<String>(FONT_CANDIDATES);
 
-        private final JComboBox<VerticalAlignmentOption> alignmentComboBox = new JComboBox<VerticalAlignmentOption>(
-                ALIGNMENT_OPTIONS);
+        private final JComboBox<VerticalAlignmentOption> alignmentComboBox = new JComboBox<VerticalAlignmentOption>(ALIGNMENT_OPTIONS);
 
-        private final JSpinner h1SizeSpinner = createIntegerSpinner(DEFAULT_H1_FONT_SIZE, MdFontSettings.MIN_FONT_SIZE,
-                MdFontSettings.MAX_FONT_SIZE);
+        private final JSpinner h1SizeSpinner = createIntegerSpinner(DEFAULT_H1_FONT_SIZE, MdFontSettings.MIN_FONT_SIZE, MdFontSettings.MAX_FONT_SIZE);
 
-        private final JSpinner h2SizeSpinner = createIntegerSpinner(DEFAULT_H2_FONT_SIZE, MdFontSettings.MIN_FONT_SIZE,
-                MdFontSettings.MAX_FONT_SIZE);
+        private final JSpinner h2SizeSpinner = createIntegerSpinner(DEFAULT_H2_FONT_SIZE, MdFontSettings.MIN_FONT_SIZE, MdFontSettings.MAX_FONT_SIZE);
 
-        private final JSpinner h3SizeSpinner = createIntegerSpinner(DEFAULT_H3_FONT_SIZE, MdFontSettings.MIN_FONT_SIZE,
-                MdFontSettings.MAX_FONT_SIZE);
+        private final JSpinner h3SizeSpinner = createIntegerSpinner(DEFAULT_H3_FONT_SIZE, MdFontSettings.MIN_FONT_SIZE, MdFontSettings.MAX_FONT_SIZE);
 
-        private final JSpinner normalSizeSpinner = createIntegerSpinner(DEFAULT_NORMAL_FONT_SIZE,
-                MdFontSettings.MIN_FONT_SIZE, MdFontSettings.MAX_FONT_SIZE);
+        private final JSpinner normalSizeSpinner = createIntegerSpinner(DEFAULT_NORMAL_FONT_SIZE, MdFontSettings.MIN_FONT_SIZE, MdFontSettings.MAX_FONT_SIZE);
 
         private final JLabel errorLabel = new JLabel(" ");
 
@@ -143,7 +95,7 @@ public final class Md2ExcelConfigDialog {
         private Md2ExcelConfig result;
 
         ConfigForm() {
-            dialog = new JDialog((Frame) null, "Markdown → Excel 設定", true);
+            dialog = new JDialog((Frame)null, "Markdown → Excel 設定", true);
 
             configureComponents();
             configureDialog();
@@ -197,15 +149,10 @@ public final class Md2ExcelConfigDialog {
         private void configureDialog() {
             dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
 
-            JPanel content = new JPanel(new BorderLayout(0, 12));
+            JPanel formPanel = FormLayout.createFormPanel(this);
+            JPanel buttonPanel = createButtonPanel();
 
-            content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-
-            content.add(createFormPanel(), BorderLayout.CENTER);
-
-            content.add(createButtonPanel(), BorderLayout.SOUTH);
-
-            dialog.setContentPane(content);
+            dialog.setContentPane(FormLayout.createContentPanel(formPanel, buttonPanel));
 
             bindEscapeKey();
 
@@ -214,72 +161,13 @@ public final class Md2ExcelConfigDialog {
             dialog.setLocationRelativeTo(null);
         }
 
-        private JPanel createFormPanel() {
-            JPanel panel = new JPanel(new GridBagLayout());
-
-            GridBagConstraints constraints = new GridBagConstraints();
-
-            constraints.insets = new Insets(4, 4, 4, 4);
-
-            constraints.anchor = GridBagConstraints.WEST;
-
-            constraints.fill = GridBagConstraints.HORIZONTAL;
-
-            constraints.weightx = 1.0;
-
-            int row = 0;
-
-            JPanel inputPanel = new JPanel(new BorderLayout(6, 0));
-
-            inputPanel.add(inputPathField, BorderLayout.CENTER);
-
-            inputPanel.add(browseButton, BorderLayout.EAST);
-
-            addFormRow(panel, constraints, row++, "Markdownファイル:", inputPanel);
-
-            addFormRow(panel, constraints, row++, "出力ファイル:", outputPathField);
-
-            addFormRow(panel, constraints, row++, "シート全体の列数 (" + MdSheetSettings.MIN_TOTAL_COLUMN_COUNT + "～"
-                    + MdSheetSettings.MAX_TOTAL_COLUMN_COUNT + "):", totalColumnCountSpinner);
-
-            addFormRow(panel, constraints, row++, "フォント:", fontComboBox);
-
-            addFormRow(panel, constraints, row++, "セルの縦位置:", alignmentComboBox);
-
-            addFormRow(panel, constraints, row++, "# 見出しサイズ:", h1SizeSpinner);
-
-            addFormRow(panel, constraints, row++, "## 見出しサイズ:", h2SizeSpinner);
-
-            addFormRow(panel, constraints, row++, "### 見出しサイズ:", h3SizeSpinner);
-
-            addFormRow(panel, constraints, row++, "通常テキストサイズ:", normalSizeSpinner);
-
-            GridBagConstraints errorConstraints = new GridBagConstraints();
-
-            errorConstraints.gridx = 0;
-            errorConstraints.gridy = row;
-            errorConstraints.gridwidth = 2;
-            errorConstraints.weightx = 1.0;
-            errorConstraints.fill = GridBagConstraints.HORIZONTAL;
-
-            errorConstraints.insets = new Insets(8, 4, 0, 4);
-
-            panel.add(errorLabel, errorConstraints);
-
-            return panel;
-        }
-
         private JPanel createButtonPanel() {
-            JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-
             JButton okButton = new JButton("OK");
-
             JButton cancelButton = new JButton("キャンセル");
 
             okButton.addActionListener(new java.awt.event.ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent event) {
-
                     submit();
                 }
             });
@@ -287,17 +175,13 @@ public final class Md2ExcelConfigDialog {
             cancelButton.addActionListener(new java.awt.event.ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent event) {
-
                     cancel();
                 }
             });
 
             dialog.getRootPane().setDefaultButton(okButton);
 
-            panel.add(okButton);
-            panel.add(cancelButton);
-
-            return panel;
+            return FormLayout.createButtonPanel(okButton, cancelButton);
         }
 
         private void chooseInputFile() {
@@ -358,7 +242,7 @@ public final class Md2ExcelConfigDialog {
             try {
                 Path inputPath = Paths.get(inputText).toAbsolutePath();
 
-                Path outputPath = replaceExtension(inputPath, ".xlsx");
+                Path outputPath = Md2ExcelConfigInput.replaceExtension(inputPath, ".xlsx");
 
                 outputPathField.setText(outputPath.toString());
 
@@ -374,12 +258,10 @@ public final class Md2ExcelConfigDialog {
                 commitSpinnerEditors();
 
                 Object selectedFont = fontComboBox.getSelectedItem();
-                VerticalAlignmentOption alignmentOption = (VerticalAlignmentOption) alignmentComboBox.getSelectedItem();
-                result = Md2ExcelConfigInput.create(inputPathField.getText(),
-                        selectedFont == null ? null : selectedFont.toString(),
-                        alignmentOption == null ? null : alignmentOption.getAlignment(), getSpinnerValue(h1SizeSpinner),
-                        getSpinnerValue(h2SizeSpinner), getSpinnerValue(h3SizeSpinner),
-                        getSpinnerValue(normalSizeSpinner), getSpinnerValue(totalColumnCountSpinner));
+                VerticalAlignmentOption alignmentOption = (VerticalAlignmentOption)alignmentComboBox.getSelectedItem();
+                result = Md2ExcelConfigInput.create(inputPathField.getText(), selectedFont == null ? null : selectedFont.toString(),
+                    alignmentOption == null ? null : alignmentOption.getAlignment(), getSpinnerValue(h1SizeSpinner), getSpinnerValue(h2SizeSpinner),
+                    getSpinnerValue(h3SizeSpinner), getSpinnerValue(normalSizeSpinner), getSpinnerValue(totalColumnCountSpinner));
 
                 dialog.dispose();
 
@@ -413,8 +295,7 @@ public final class Md2ExcelConfigDialog {
 
             String actionKey = "cancel-form";
 
-            rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
-                    actionKey);
+            rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), actionKey);
 
             rootPane.getActionMap().put(actionKey, new AbstractAction() {
                 private static final long serialVersionUID = 1L;
@@ -434,26 +315,108 @@ public final class Md2ExcelConfigDialog {
         }
     }
 
-    private static void addFormRow(JPanel panel, GridBagConstraints baseConstraints, int row, String labelText,
-            JComponent component) {
+    /**
+     * 設定フォームの配置だけを担当する。
+     *
+     * コンポーネントの所有、イベント登録、入力値の検証はConfigFormに残す。
+     */
+    private static final class FormLayout {
 
-        GridBagConstraints labelConstraints = (GridBagConstraints) baseConstraints.clone();
+        private FormLayout() {
+        }
 
-        labelConstraints.gridx = 0;
-        labelConstraints.gridy = row;
-        labelConstraints.weightx = 0.0;
-        labelConstraints.fill = GridBagConstraints.NONE;
+        static JPanel createContentPanel(JPanel formPanel, JPanel buttonPanel) {
 
-        panel.add(new JLabel(labelText), labelConstraints);
+            JPanel content = new JPanel(new BorderLayout(0, 12));
 
-        GridBagConstraints inputConstraints = (GridBagConstraints) baseConstraints.clone();
+            content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
 
-        inputConstraints.gridx = 1;
-        inputConstraints.gridy = row;
-        inputConstraints.weightx = 1.0;
-        inputConstraints.fill = GridBagConstraints.HORIZONTAL;
+            content.add(formPanel, BorderLayout.CENTER);
+            content.add(buttonPanel, BorderLayout.SOUTH);
 
-        panel.add(component, inputConstraints);
+            return content;
+        }
+
+        static JPanel createButtonPanel(JButton okButton, JButton cancelButton) {
+
+            JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+
+            panel.add(okButton);
+            panel.add(cancelButton);
+
+            return panel;
+        }
+
+        static JPanel createFormPanel(ConfigForm form) {
+            JPanel panel = new JPanel(new GridBagLayout());
+
+            GridBagConstraints constraints = new GridBagConstraints();
+
+            constraints.insets = new Insets(4, 4, 4, 4);
+            constraints.anchor = GridBagConstraints.WEST;
+            constraints.fill = GridBagConstraints.HORIZONTAL;
+            constraints.weightx = 1.0;
+
+            int row = 0;
+
+            JPanel inputPanel = new JPanel(new BorderLayout(6, 0));
+
+            inputPanel.add(form.inputPathField, BorderLayout.CENTER);
+            inputPanel.add(form.browseButton, BorderLayout.EAST);
+
+            addFormRow(panel, constraints, row++, "Markdownファイル:", inputPanel);
+
+            addFormRow(panel, constraints, row++, "出力ファイル:", form.outputPathField);
+
+            addFormRow(panel, constraints, row++, "シート全体の列数 (" + MdSheetSettings.MIN_TOTAL_COLUMN_COUNT + "～" + MdSheetSettings.MAX_TOTAL_COLUMN_COUNT + "):",
+                form.totalColumnCountSpinner);
+
+            addFormRow(panel, constraints, row++, "フォント:", form.fontComboBox);
+
+            addFormRow(panel, constraints, row++, "セルの縦位置:", form.alignmentComboBox);
+
+            addFormRow(panel, constraints, row++, "# 見出しサイズ:", form.h1SizeSpinner);
+
+            addFormRow(panel, constraints, row++, "## 見出しサイズ:", form.h2SizeSpinner);
+
+            addFormRow(panel, constraints, row++, "### 見出しサイズ:", form.h3SizeSpinner);
+
+            addFormRow(panel, constraints, row++, "通常テキストサイズ:", form.normalSizeSpinner);
+
+            GridBagConstraints errorConstraints = new GridBagConstraints();
+
+            errorConstraints.gridx = 0;
+            errorConstraints.gridy = row;
+            errorConstraints.gridwidth = 2;
+            errorConstraints.weightx = 1.0;
+            errorConstraints.fill = GridBagConstraints.HORIZONTAL;
+            errorConstraints.insets = new Insets(8, 4, 0, 4);
+
+            panel.add(form.errorLabel, errorConstraints);
+
+            return panel;
+        }
+
+        private static void addFormRow(JPanel panel, GridBagConstraints baseConstraints, int row, String labelText, JComponent component) {
+
+            GridBagConstraints labelConstraints = (GridBagConstraints)baseConstraints.clone();
+
+            labelConstraints.gridx = 0;
+            labelConstraints.gridy = row;
+            labelConstraints.weightx = 0.0;
+            labelConstraints.fill = GridBagConstraints.NONE;
+
+            panel.add(new JLabel(labelText), labelConstraints);
+
+            GridBagConstraints inputConstraints = (GridBagConstraints)baseConstraints.clone();
+
+            inputConstraints.gridx = 1;
+            inputConstraints.gridy = row;
+            inputConstraints.weightx = 1.0;
+            inputConstraints.fill = GridBagConstraints.HORIZONTAL;
+
+            panel.add(component, inputConstraints);
+        }
     }
 
     private static JSpinner createIntegerSpinner(int defaultValue, int minValue, int maxValue) {
@@ -477,7 +440,7 @@ public final class Md2ExcelConfigDialog {
             throw new IllegalArgumentException("Spinner value must be numeric");
         }
 
-        return ((Number) value).intValue();
+        return ((Number)value).intValue();
     }
 
     private static final class VerticalAlignmentOption {

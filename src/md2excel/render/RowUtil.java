@@ -4,83 +4,33 @@ import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 
-public final class RowUtil {
+final class RowUtil {
+
     private RowUtil() {
     }
 
-    public enum ReuseKind {
-        CODE_LINE,
-        TABLE_ROW,
-        HORIZONTAL_RULE,
-        BLOCK_QUOTE,
-        BULLET_ITEM,
-        NUMBER_ITEM
-    }
-
-    public static Row createRow(Sheet sheet, RenderState st, CellStyle defaultRowStyle) {
+    static Row createRow(Sheet sheet, RenderState st, CellStyle defaultRowStyle) {
         Row row = sheet.createRow(st.allocateNextRowIndex());
         ensureRowStyle(row, defaultRowStyle);
         return row;
     }
 
-    private static Row createRowOrReusePreviousMarkdownBlank(Sheet sheet, RenderState st, boolean canReuseBlank,
-            CellStyle defaultRowStyle) {
+    /**
+     * 水平線用。直前に再利用可能なMarkdown空行があれば、その行を使う。 なければ新しい行を作る。
+     */
+    static Row createRowOrReusePreviousMarkdownBlankForRule(RenderContext ctx, CellStyle defaultRowStyle) {
 
-        Row row;
-        if (st.hasPreviousReusableMarkdownBlankRow() && canReuseBlank) {
-
-            int previousRowIndex = st.getPreviousRowIndex();
-
-            row = sheet.getRow(previousRowIndex);
-
-            if (row == null) {
-                row = sheet.createRow(previousRowIndex);
-            }
-        } else {
-            row = sheet.createRow(st.allocateNextRowIndex());
+        if (!ctx.st.hasPreviousReusableMarkdownBlankRow()) {
+            return createRow(ctx.sheet, ctx.st, defaultRowStyle);
         }
-        ensureRowStyle(row, defaultRowStyle);
-        return row;
+
+        return getOrCreateRow(ctx.sheet, ctx.st.getPreviousRowIndex(), defaultRowStyle);
     }
 
-    // canReuseBlank判定を RowUtil に寄せた版
-    public static Row createRowOrReusePreviousMarkdownBlank(Sheet sheet, RenderState st, ReuseKind kind,
-            CellStyle defaultRowStyle) {
-        boolean canReuseBlank = canReuseMarkdownBlank(st, kind);
-        return createRowOrReusePreviousMarkdownBlank(sheet, st, canReuseBlank, defaultRowStyle);
-    }
-
-    // 判定ルールをここに集約（仕様維持）
-    private static boolean canReuseMarkdownBlank(RenderState st, ReuseKind kind) {
-        if (kind != ReuseKind.HORIZONTAL_RULE && st.isLastBlankAfterTable()) {
-
-            return false;
-        }
-        switch (kind) {
-        case HORIZONTAL_RULE:
-            return true;
-
-        case BLOCK_QUOTE:
-            return false;
-
-        case BULLET_ITEM:
-        case NUMBER_ITEM:
-            return false;
-
-        case CODE_LINE:
-            // コードブロック前の Markdown 空行は保持する
-            return false;
-
-        case TABLE_ROW:
-            // テーブル開始前の Markdown 空行は詰めない（空行を保持）
-            return false;
-
-        default:
-            return false;
-        }
-    }
-
-    public static Row reuseLastMarkdownBlankRow(Sheet sheet, RenderState st, CellStyle defaultRowStyle) {
+    /**
+     * 段落用の空行再利用。水平線用の規則とは別に維持する。
+     */
+    static Row reuseLastMarkdownBlankRow(Sheet sheet, RenderState st, CellStyle defaultRowStyle) {
 
         Row row;
 
@@ -100,31 +50,21 @@ public final class RowUtil {
         return row;
     }
 
-    // 任意 rowNum を get or create
-    public static Row getOrCreateRow(Sheet sheet, int rowNum, CellStyle defaultRowStyle) {
+    private static Row getOrCreateRow(Sheet sheet, int rowNum, CellStyle defaultRowStyle) {
+
         Row row = sheet.getRow(rowNum);
+
         if (row == null) {
             row = sheet.createRow(rowNum);
         }
+
         ensureRowStyle(row, defaultRowStyle);
         return row;
     }
 
-    public static void ensureRowStyle(Row row, CellStyle defaultRowStyle) {
+    private static void ensureRowStyle(Row row, CellStyle defaultRowStyle) {
         if (row.getRowStyle() == null) {
             row.setRowStyle(defaultRowStyle);
         }
-    }
-
-    // =========================
-    // ctx版オーバーロード
-    // =========================
-    public static Row createRow(RenderContext ctx, CellStyle defaultRowStyle) {
-        return createRow(ctx.sheet, ctx.st, defaultRowStyle);
-    }
-
-    public static Row createRowOrReusePreviousMarkdownBlank(RenderContext ctx, ReuseKind kind,
-            CellStyle defaultRowStyle) {
-        return createRowOrReusePreviousMarkdownBlank(ctx.sheet, ctx.st, kind, defaultRowStyle);
     }
 }

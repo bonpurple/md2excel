@@ -5,16 +5,11 @@ import org.apache.poi.ss.usermodel.CellStyle;
 final class ParagraphBuffer {
 
     // MarkdownInline 側の paragraph parser でも同じ値を使う前提
-    static final char SOFT_BREAK_TOKEN = '\uE000';
-    static final char HARD_BREAK_TOKEN = '\uE001';
+    static final char SOFT_BREAK_TOKEN = ParagraphBreakTokens.SOFT_BREAK_TOKEN;
+    static final char HARD_BREAK_TOKEN = ParagraphBreakTokens.HARD_BREAK_TOKEN;
 
     enum Kind {
-        NORMAL,
-        QUOTE_NORMAL,
-        BULLET,
-        NUMBER,
-        QUOTE_BULLET,
-        QUOTE_NUMBER
+        NORMAL, QUOTE_NORMAL, BULLET, NUMBER, QUOTE_BULLET, QUOTE_NUMBER
     }
 
     final Kind kind;

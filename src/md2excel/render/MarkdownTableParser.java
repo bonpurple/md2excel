@@ -88,51 +88,66 @@ final class MarkdownTableParser {
             inner = inner.substring(0, inner.length() - 1);
         }
 
-        List<String> cells = new ArrayList<String>();
+        List<Integer> pipePositions = new ArrayList<Integer>();
+        scanUnescapedPipes(inner, pipePositions);
 
+        List<String> cells = new ArrayList<String>(pipePositions.size() + 1);
         int segStart = 0;
-        int n = inner.length();
 
-        for (int i = 0; i <= n; i++) {
-            if (i == n || (inner.charAt(i) == '|' && !isEscapedPipe(inner, i))) {
-                cells.add(inner.substring(segStart, i));
-                segStart = i + 1;
-            }
+        for (int pipePosition : pipePositions) {
+            cells.add(inner.substring(segStart, pipePosition));
+            segStart = pipePosition + 1;
         }
+
+        // 空の最終セルも、従来どおり追加する。
+        cells.add(inner.substring(segStart));
 
         return cells;
     }
 
-    /**
-     * pos の '|' が "\|" のようにエスケープされているか判定する。 直前に連続する '\' の個数が奇数ならエスケープ扱い。
-     */
-    private static boolean isEscapedPipe(String s, int pos) {
-        if (pos <= 0 || pos >= s.length() || s.charAt(pos) != '|')
-            return false;
-        int bs = 0;
-        for (int i = pos - 1; i >= 0 && s.charAt(i) == '\\'; i--) {
-            bs++;
+    private static int countUnescapedPipes(String s) {
+        if (s == null || s.isEmpty()) {
+            return 0;
         }
-        return (bs % 2) == 1;
+
+        return scanUnescapedPipes(s, null);
     }
 
-    private static int countUnescapedPipes(String s) {
-        if (s == null || s.isEmpty())
-            return 0;
-
+    /**
+     * エスケープされていないパイプを左から走査する。
+     *
+     * 直前に連続するバックスラッシュが偶数個なら区切りとする。 positionsがnullの場合は個数だけ数え、セル分割時には位置も記録する。
+     */
+    private static int scanUnescapedPipes(String text, List<Integer> positions) {
         int count = 0;
-        for (int i = 0; i < s.length(); i++) {
-            if (s.charAt(i) == '|' && !isEscapedPipe(s, i)) {
-                count++;
+        int consecutiveBackslashes = 0;
+
+        for (int index = 0; index < text.length(); index++) {
+            char ch = text.charAt(index);
+
+            if (ch == '\\') {
+                consecutiveBackslashes++;
+                continue;
             }
+
+            if (ch == '|' && (consecutiveBackslashes % 2) == 0) {
+                count++;
+
+                if (positions != null) {
+                    positions.add(Integer.valueOf(index));
+                }
+            }
+
+            consecutiveBackslashes = 0;
         }
+
         return count;
     }
 
     /**
-     * テーブルセル内の "\|" を "|" に戻す。
+     * テーブルセル内の隣接した "\|" を "|" に置換する。 インラインコード内も区別せず、従来どおり同じ処理を行う。
      */
-    static String unescapePipeOutsideInlineCode(String s) {
+    static String unescapePipesInTableCell(String s) {
         if (s == null || s.isEmpty())
             return s;
         StringBuilder out = new StringBuilder(s.length());
@@ -147,5 +162,4 @@ final class MarkdownTableParser {
         }
         return out.toString();
     }
-
 }

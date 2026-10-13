@@ -10,6 +10,9 @@ import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.Test;
 
+import md2excel.config.MdFontSettings;
+import md2excel.config.MdSheetSettings;
+
 public class MdStyleCatalogTest {
 
     @Test
@@ -134,6 +137,42 @@ public class MdStyleCatalogTest {
             MdStyleCatalog styles = createCatalog(workbook);
 
             styles.codeBlockFrameStyle(-1);
+        }
+    }
+
+    @Test
+    public void acceptsSettingsObjects() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            MdFontSettings fonts = new MdFontSettings("Arial", 23, 19, 17, 13);
+            MdSheetSettings sheet = new MdSheetSettings(40, VerticalAlignment.TOP);
+
+            MdStyleCatalog styles = new MdStyleCatalog(workbook, fonts, sheet);
+
+            Font heading1 = workbook.getFontAt(styles.heading1Style.getFontIndex());
+            Font heading2 = workbook.getFontAt(styles.heading2Style.getFontIndex());
+            Font heading3 = workbook.getFontAt(styles.heading3Style.getFontIndex());
+            Font normal = workbook.getFontAt(styles.normalStyle.getFontIndex());
+
+            assertEquals("Arial", heading1.getFontName());
+            assertEquals(23, heading1.getFontHeightInPoints());
+            assertEquals(19, heading2.getFontHeightInPoints());
+            assertEquals(17, heading3.getFontHeightInPoints());
+            assertEquals(13, normal.getFontHeightInPoints());
+            assertEquals(VerticalAlignment.TOP, styles.normalStyle.getVerticalAlignment());
+        }
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsNullFontSettings() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            new MdStyleCatalog(workbook, (MdFontSettings)null, new MdSheetSettings(40, VerticalAlignment.BOTTOM));
+        }
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsNullSheetSettings() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            new MdStyleCatalog(workbook, new MdFontSettings("Meiryo", 16, 14, 12, 11), (MdSheetSettings)null);
         }
     }
 

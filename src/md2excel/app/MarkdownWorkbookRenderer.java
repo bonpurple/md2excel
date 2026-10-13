@@ -25,15 +25,14 @@ final class MarkdownWorkbookRenderer {
     static final String SHEET_NAME = "spec";
 
     // POI内部幅。Excel表示上は約2.5
-    private static final int DEFAULT_COLUMN_WIDTH = (int) (3.125 * 256);
+    private static final int DEFAULT_COLUMN_WIDTH = (int)(3.125 * 256);
 
     private static final int START_ROW_INDEX = 1;
 
     private static final int LEFT_MARGIN_COLUMN_COUNT = 1;
     private static final int RIGHT_MARGIN_COLUMN_COUNT = 1;
 
-    void render(Iterator<String> lines, XSSFWorkbook workbook, MdFontSettings fontSettings,
-            MdSheetSettings sheetSettings) {
+    void render(Iterator<String> lines, XSSFWorkbook workbook, MdFontSettings fontSettings, MdSheetSettings sheetSettings) {
 
         if (lines == null) {
             throw new IllegalArgumentException("lines must not be null");
@@ -68,18 +67,14 @@ final class MarkdownWorkbookRenderer {
         MarkdownRenderer.render(lines, context);
     }
 
-    private static MdStyleCatalog createStyles(XSSFWorkbook workbook, MdFontSettings fontSettings,
-            MdSheetSettings sheetSettings) {
+    private static MdStyleCatalog createStyles(XSSFWorkbook workbook, MdFontSettings fontSettings, MdSheetSettings sheetSettings) {
 
-        return new MdStyleCatalog(workbook, fontSettings.getFontName(), fontSettings.getH1Size(),
-                fontSettings.getH2Size(), fontSettings.getH3Size(), fontSettings.getNormalSize(),
-                sheetSettings.getVerticalAlignment());
+        return new MdStyleCatalog(workbook, fontSettings, sheetSettings);
     }
 
     private static SheetColumnLayout createColumnLayout(MdSheetSettings sheetSettings) {
 
-        return new SheetColumnLayout(sheetSettings.getTotalColumnCount(), LEFT_MARGIN_COLUMN_COUNT,
-                RIGHT_MARGIN_COLUMN_COUNT);
+        return new SheetColumnLayout(sheetSettings.getTotalColumnCount(), LEFT_MARGIN_COLUMN_COUNT, RIGHT_MARGIN_COLUMN_COUNT);
     }
 
     private static void initializeSheet(Sheet sheet) {
